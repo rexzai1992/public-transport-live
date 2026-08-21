@@ -1,0 +1,21 @@
+{
+  "appId": "com.craveasia.ptlive",
+  "appName": "Public Transport Live",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_bus",
+      "iconColor": "#111111"
+    }
+  }
+}

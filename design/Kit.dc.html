@@ -1,0 +1,261 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: inherit; text-decoration: none; }
+    a:hover { opacity: 0.7; }
+
+    [data-theme="dark"] {
+      --page: #050505;
+      --glass: rgba(18, 18, 18, 0.72);
+      --glass-raised: rgba(28, 28, 28, 0.76);
+      --edge: rgba(255, 255, 255, 0.08);
+      --edge-strong: rgba(255, 255, 255, 0.25);
+      --ink: #ffffff;
+      --ink-2: rgba(255, 255, 255, 0.65);
+      --ink-3: rgba(255, 255, 255, 0.40);
+      --rule: rgba(255, 255, 255, 0.08);
+      --hover: rgba(255, 255, 255, 0.06);
+      --selected: rgba(255, 255, 255, 0.10);
+      --invert-bg: #ffffff;
+      --invert-ink: #090909;
+      --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.5);
+    }
+    [data-theme="light"] {
+      --page: #f5f5f5;
+      --glass: rgba(255, 255, 255, 0.72);
+      --glass-raised: rgba(255, 255, 255, 0.88);
+      --edge: rgba(0, 0, 0, 0.07);
+      --edge-strong: rgba(0, 0, 0, 0.22);
+      --ink: #090909;
+      --ink-2: rgba(0, 0, 0, 0.62);
+      --ink-3: rgba(0, 0, 0, 0.40);
+      --rule: rgba(0, 0, 0, 0.07);
+      --hover: rgba(0, 0, 0, 0.04);
+      --selected: rgba(0, 0, 0, 0.07);
+      --invert-bg: #090909;
+      --invert-ink: #ffffff;
+      --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.10);
+    }
+
+    .rb { font-family: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; }
+    .rb * { box-sizing: border-box; }
+    .num { font-variant-numeric: tabular-nums; }
+    .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cap { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3); }
+  </style>
+</helmet>
+
+<div class="rb" style="width: 1280px; height: 940px; background: #1a1a1a; padding: 24px; display: flex; flex-direction: column; gap: 20px;">
+
+  <div style="display: flex; align-items: baseline; justify-content: space-between; color: #ffffff;">
+    <div style="font-size: 19px; font-weight: 600; letter-spacing: -0.01em;">Rapid Bus Live — monochrome glass kit</div>
+    <div style="font-size: 11.5px; color: rgba(255,255,255,0.45);">Inter · 4/8/12/16/20/24/32 spacing · radii 8/10/12/16</div>
+  </div>
+
+  <div style="flex-grow: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px;">
+    <sc-for list="{{ modes }}" as="mode" hint-placeholder-count="2">
+      <div data-theme="{{ mode.key }}" style="border-radius: 16px; background: var(--page); border: 1px solid var(--edge); padding: 20px; display: flex; flex-direction: column; gap: 18px; overflow: hidden;">
+
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 14px; font-weight: 600; color: var(--ink);">{{ mode.title }}</span>
+          <span class="num" style="font-size: 11px; color: var(--ink-3);">{{ mode.pageHex }}</span>
+        </div>
+
+        <!-- Tokens -->
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span class="cap">Surfaces &amp; text</span>
+          <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;">
+            <sc-for list="{{ mode.swatches }}" as="sw" hint-placeholder-count="4">
+              <div style="display: flex; flex-direction: column; gap: 5px;">
+                <span style="height: 34px; border-radius: 8px; background: {{ sw.fill }}; border: 1px solid var(--edge);"></span>
+                <span class="clip" style="font-size: 9.5px; color: var(--ink-3);">{{ sw.name }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <!-- Glass panel sample -->
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span class="cap">Glass panel · blur 20–22px</span>
+          <div style="padding: 12px 14px; border-radius: 14px; background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--edge); display: flex; flex-direction: column; gap: 3px;">
+            <span class="num" style="font-size: 11px; color: var(--ink-2);">{{ mode.glassCss }}</span>
+            <span class="num" style="font-size: 11px; color: var(--ink-3);">{{ mode.edgeCss }}</span>
+          </div>
+        </div>
+
+        <!-- Badges + chips -->
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <span class="cap">Route badge · quick chips</span>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span class="num" style="min-width: 46px; height: 34px; padding: 0 10px; border-radius: 8px; background: var(--invert-bg); color: var(--invert-ink); font-size: 17px; font-weight: 600; display: grid; place-items: center;">250</span>
+            <span class="num" style="min-width: 40px; height: 26px; padding: 0 7px; border-radius: 8px; background: var(--invert-bg); color: var(--invert-ink); font-size: 12.5px; font-weight: 600; display: grid; place-items: center;">300</span>
+            <span class="num" style="height: 28px; padding: 0 11px; border-radius: 8px; background: var(--invert-bg); color: var(--invert-ink); font-size: 12px; font-weight: 600; display: grid; place-items: center;">T117</span>
+            <span class="num" style="height: 28px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--edge); color: var(--ink-2); font-size: 12px; font-weight: 600; display: grid; place-items: center;">401</span>
+            <span class="num" style="height: 24px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--edge); color: var(--ink-2); font-size: 11.5px; font-weight: 500; display: grid; place-items: center;">420</span>
+          </div>
+        </div>
+
+        <!-- Segmented control -->
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <span class="cap">Segmented control</span>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border-radius: 10px; border: 1px solid var(--edge);">
+            <span style="height: 32px; border-radius: 8px; background: transparent; color: var(--ink-3); font-size: 12.5px; font-weight: 500; display: grid; place-items: center;">Arrivals</span>
+            <span style="height: 32px; border-radius: 8px; background: var(--invert-bg); color: var(--invert-ink); font-size: 12.5px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 6px;">Stops <span class="num" style="font-size: 11px;">41</span></span>
+          </div>
+        </div>
+
+        <!-- Route rows -->
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <span class="cap">Route rows · default / hover / selected</span>
+          <div style="display: flex; flex-direction: column;">
+            <sc-for list="{{ mode.rows }}" as="row" hint-placeholder-count="3">
+              <div style="position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 8px; border-top: 1px solid {{ row.rule }}; border-radius: 10px; background: {{ row.bg }};">
+                <span style="position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 2px; height: {{ row.mark }}; border-radius: 999px; background: var(--ink);"></span>
+                <span class="num" style="flex: none; min-width: 40px; height: 26px; padding: 0 7px; border-radius: 8px; background: var(--invert-bg); color: var(--invert-ink); font-size: 12.5px; font-weight: 600; display: grid; place-items: center;">{{ row.code }}</span>
+                <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+                  <span class="clip" style="font-size: 14px; font-weight: 500; color: var(--ink);">{{ row.origin }}</span>
+                  <span class="clip num" style="font-size: 11px; color: var(--ink-3);">{{ row.meta }}</span>
+                </span>
+                <span style="flex: none; font-size: 10px; color: var(--ink-3);">{{ row.state }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <!-- Timeline -->
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <span class="cap">Stop timeline</span>
+          <div style="display: flex; flex-direction: column;">
+            <sc-for list="{{ mode.timeline }}" as="stop" hint-placeholder-count="4">
+              <div style="position: relative; display: flex; align-items: center; gap: 12px; min-height: 38px; padding: 6px 8px 6px 26px; border-radius: 8px; background: {{ stop.bg }};">
+                <span style="position: absolute; left: 8px; top: {{ stop.lineTop }}; bottom: {{ stop.lineBottom }}; width: 1px; background: var(--edge-strong); opacity: 0.55;"></span>
+                <span style="position: absolute; left: 4.5px; top: 50%; transform: translateY(-50%); width: 9px; height: 9px; border-radius: 999px; background: {{ stop.fill }}; border: 1.5px solid {{ stop.edge }};"></span>
+                <span class="clip" style="flex-grow: 1; min-width: 0; font-size: 13px; font-weight: {{ stop.weight }}; color: {{ stop.ink }};">{{ stop.name }}</span>
+                <span class="num" style="flex: none; font-size: 12px; font-weight: 500; color: {{ stop.etaInk }};">{{ stop.eta }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <!-- Live status + controls + marker -->
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <span class="cap">Floating status · controls · live bus</span>
+          <div style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 6px 0 14px; border-radius: 12px; background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--edge);">
+            <span style="width: 6px; height: 6px; border-radius: 999px; background: #30d158; flex: none;"></span>
+            <span class="num" style="font-size: 12.5px; font-weight: 500; color: var(--ink); white-space: nowrap;">2 buses live</span>
+            <span style="font-size: 12.5px; color: var(--ink-3);">·</span>
+            <span class="num" style="font-size: 12.5px; color: var(--ink-2); white-space: nowrap;">28s ago</span>
+            <span style="flex-grow: 1;"></span>
+            <span style="height: 32px; padding: 0 12px; border-radius: 8px; background: var(--invert-bg); color: var(--invert-ink); font-size: 12px; font-weight: 500; display: grid; place-items: center; white-space: nowrap;">Following</span>
+          </div>
+          <div style="display: flex; align-items: flex-end; gap: 10px;">
+            <span style="width: 40px; height: 40px; border-radius: 12px; background: var(--glass); border: 1px solid var(--edge); color: var(--ink); display: grid; place-items: center;">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
+                <circle cx="12" cy="12" r="6.8" stroke="currentColor" stroke-width="1.6"></circle>
+                <path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+              </svg>
+            </span>
+            <span style="width: 40px; height: 40px; border-radius: 12px; background: var(--glass); border: 1px solid var(--edge); color: var(--ink); display: grid; place-items: center;">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
+            </span>
+            <span style="width: 40px; height: 40px; border-radius: 12px; background: var(--glass); border: 1px solid var(--edge); color: var(--ink-2); display: grid; place-items: center;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></path>
+                <path d="M20 3.4v4h-4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            </span>
+            <span style="flex-grow: 1;"></span>
+            <span style="display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 12px; border-radius: 10px; background: {{ mode.mapTone }};">
+              <span style="width: 34px; height: 34px; border-radius: 999px; background: #ffffff; border: 1px solid rgba(0,0,0,0.55); box-shadow: 0 6px 18px rgba(0,0,0,0.45); display: grid; place-items: center;">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 4h12a2.5 2.5 0 0 1 2.5 2.5v9a2.5 2.5 0 0 1-1.4 2.25v1.6a1.3 1.3 0 0 1-2.6 0v-1.1H7.5v1.1a1.3 1.3 0 0 1-2.6 0v-1.6A2.5 2.5 0 0 1 3.5 15.5v-9A2.5 2.5 0 0 1 6 4Z" fill="#090909"></path>
+                  <rect x="5.6" y="6.4" width="12.8" height="4.9" rx="1" fill="#ffffff"></rect>
+                  <circle cx="7.9" cy="14.4" r="1.15" fill="#ffffff"></circle>
+                  <circle cx="16.1" cy="14.4" r="1.15" fill="#ffffff"></circle>
+                </svg>
+              </span>
+              <span class="num" style="padding: 2px 7px; border-radius: 6px; background: var(--glass); border: 1px solid var(--edge); color: var(--ink); font-size: 10.5px; font-weight: 600;">426</span>
+            </span>
+          </div>
+        </div>
+
+      </div>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1280,"height":940}}'>
+class Component extends DCLogic {
+  buildMode(key) {
+    const dark = key === 'dark';
+    const swatches = dark
+      ? [
+          { name: 'page #050505', fill: '#050505' },
+          { name: 'glass .72', fill: 'rgba(18,18,18,0.72)' },
+          { name: 'raised .76', fill: 'rgba(28,28,28,0.76)' },
+          { name: 'ink #FFFFFF', fill: '#ffffff' }
+        ]
+      : [
+          { name: 'page #F5F5F5', fill: '#f5f5f5' },
+          { name: 'glass .72', fill: 'rgba(255,255,255,0.72)' },
+          { name: 'raised .88', fill: 'rgba(255,255,255,0.88)' },
+          { name: 'ink #090909', fill: '#090909' }
+        ];
+
+    const rows = [
+      { code: '300', origin: 'Terminal Maluri', meta: 'Rapid Bus KL · U3000', state: 'default', bg: 'transparent', rule: 'var(--rule)', mark: '0px' },
+      { code: '303', origin: 'Taman Mulia Jaya', meta: 'Rapid Bus KL · U3030', state: 'hover', bg: 'var(--hover)', rule: 'var(--rule)', mark: '0px' },
+      { code: '250', origin: 'Stesen LRT Wangsa Maju', meta: 'Rapid Bus KL · U2500', state: 'selected', bg: 'var(--selected)', rule: 'transparent', mark: '26px' }
+    ];
+
+    const timelineSource = [
+      ['KL117 BSN LEBUH AMPANG', 'Arriving', false],
+      ['KL30 AMANAHRAYA', 'Arriving', true],
+      ['KL31 HENTIAN MUNSHI ABDULLAH', '2 min', false],
+      ['KL32 CAPSQUARE', '3 min', false]
+    ];
+
+    const timeline = timelineSource.map((entry, index) => ({
+      name: entry[0],
+      eta: entry[1],
+      etaInk: entry[1] === 'Arriving' ? 'var(--ink)' : 'var(--ink-2)',
+      bg: entry[2] ? 'var(--selected)' : 'transparent',
+      fill: entry[2] ? 'var(--ink)' : 'transparent',
+      edge: entry[2] ? 'var(--ink)' : 'var(--ink-3)',
+      ink: entry[2] ? 'var(--ink)' : 'var(--ink-2)',
+      weight: entry[2] ? '600' : '500',
+      lineTop: index === 0 ? '50%' : '0px',
+      lineBottom: index === timelineSource.length - 1 ? '50%' : '0px'
+    }));
+
+    return {
+      key: key,
+      title: dark ? 'Dark mode' : 'Light mode',
+      pageHex: dark ? '#050505' : '#F5F5F5',
+      glassCss: dark ? 'background: rgba(18,18,18,0.72)' : 'background: rgba(255,255,255,0.72)',
+      edgeCss: dark ? 'border: 1px solid rgba(255,255,255,0.08)' : 'border: 1px solid rgba(0,0,0,0.07)',
+      mapTone: dark ? '#0d0d0d' : '#ededed',
+      swatches: swatches,
+      rows: rows,
+      timeline: timeline
+    };
+  }
+
+  renderVals() {
+    return { modes: [this.buildMode('dark'), this.buildMode('light')] };
+  }
+}
+</script>
+</body>
+</html>
