@@ -13,7 +13,9 @@ import {
   vehicleBelongsToRoute
 } from "./gtfsStatic.js";
 import { buildRouteStopSchedule, malaysiaClock, withNextDepartures } from "./schedule.js";
-import { planJourney, searchStops } from "./journey.js";
+import { planJourney, searchStops, nearbyDepartures } from "./journey.js";
+import { getSgStopArrivals } from "./sg/vehicles.js";
+import { getTrainAlerts } from "./sg/datamall.js";
 import {
   categoryParamSchema,
   journeySchema,
@@ -21,8 +23,7 @@ import {
   mapQuerySchema,
   routeParamSchema,
   routeSearchSchema,
-  vehicleQuerySchema
-} from "./validators.js";
+  vehicleQuerySchema, nearbySchema, sgArrivalSchema } from "./validators.js";
 
 export const apiRouter = Router();
 
@@ -210,6 +211,36 @@ apiRouter.get("/stops/search", async (req, res, next) => {
   try {
     const { q, feeds } = stopSearchSchema.parse(req.query);
     res.json({ query: q, stops: await searchStops(q, parseFeeds(feeds)) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+apiRouter.get("/stops/nearby", async (req, res, next) => {
+  try {
+    const query = nearbySchema.parse(req.query);
+    const stops = await nearbyDepartures(query.lat, query.lon, parseFeeds(query.feeds), query.limit ?? 6);
+    res.json({ generatedAt: new Date().toISOString(), stops });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* Live per-stop predictions from LTA, ETAs plus crowding. */
+apiRouter.get("/rapid-bus/sg-bus/arrivals", async (req, res, next) => {
+  try {
+    const { stop } = sgArrivalSchema.parse(req.query);
+    res.json({ stop, services: await getSgStopArrivals(stop) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* Service disruptions. Singapore rail comes from LTA; Malaysia has no
+   equivalent API, so its entries can only ever arrive by hand. */
+apiRouter.get("/alerts", async (_req, res, next) => {
+  try {
+    res.json({ alerts: await getTrainAlerts() });
   } catch (error) {
     next(error);
   }
