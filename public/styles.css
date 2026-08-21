@@ -1,0 +1,3184 @@
+/* ---------------------------------------------------------------------------
+   Rapid Bus Live — monochrome glass
+   Two palettes, one layout. Only colour and glass opacity change between
+   modes; every measurement below is shared.
+--------------------------------------------------------------------------- */
+
+:root {
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  --r-badge: 8px;
+  --r-btn: 10px;
+  --r-field: 12px;
+  --r-panel: 16px;
+
+  --blur: 22px;
+  --live: #30d158;
+
+  /* Edge-to-edge insets, 0 in a desktop browser. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+/* Black and light blue, not black and grey. Neutral grey goes muddy on black
+   at low alpha: the old --ink-3 composited to roughly 4:1, under AA for body
+   text, so secondary rows read as smudges rather than as text. Tinting the inks
+   cool lifts the same visual weight to 6.3:1 without making them louder — a
+   blue-grey reads as further back than a neutral grey of equal contrast, so the
+   hierarchy survives while every level stays legible. Ratios in the comments
+   are measured against the panel surface (#111825), not estimated. Amber stays
+   for --progress-ahead: it has to mean something different from the blues. */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #050810;
+  --glass: rgba(17, 24, 37, 0.72);
+  --glass-raised: rgba(26, 35, 51, 0.78);
+  --edge: rgba(124, 178, 240, 0.14);
+  --edge-strong: rgba(124, 178, 240, 0.34);
+  --ink: #eaf2ff;                /* 15.8:1 */
+  --ink-2: #a9c9ec;              /* 10.4:1 */
+  --ink-3: #7d9cc0;              /*  6.3:1 — was ~4:1 as neutral grey */
+  --rule: rgba(124, 178, 240, 0.13);
+  --hover: rgba(124, 178, 240, 0.1);
+  --selected: rgba(124, 178, 240, 0.18);
+  --invert-bg: #7cc4ff;          /* active pill, 10.1:1 against --invert-ink */
+  --invert-ink: #04121f;
+  --shadow: 0 24px 64px rgba(0, 4, 12, 0.66);
+  --shadow-sm: 0 4px 14px rgba(0, 4, 12, 0.52);
+  --map-bg: #080e17;   /* matches the tile ground after the filter above */
+  --casing: rgba(2, 8, 18, 0.6);
+  --progress-ahead: #ffb340;
+  --progress-passed: rgba(169, 201, 236, 0.45);
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --page: #f5f5f5;
+  --glass: rgba(255, 255, 255, 0.72);
+  --glass-raised: rgba(255, 255, 255, 0.88);
+  --edge: rgba(0, 0, 0, 0.07);
+  --edge-strong: rgba(0, 0, 0, 0.22);
+  --ink: #090909;
+  --ink-2: rgba(0, 0, 0, 0.62);
+  --ink-3: rgba(0, 0, 0, 0.4);
+  --rule: rgba(0, 0, 0, 0.07);
+  --hover: rgba(0, 0, 0, 0.04);
+  --selected: rgba(0, 0, 0, 0.07);
+  --invert-bg: #090909;
+  --invert-ink: #ffffff;
+  --shadow: 0 24px 64px rgba(0, 0, 0, 0.14);
+  --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.1);
+  --map-bg: #ededed;
+  --casing: rgba(255, 255, 255, 0.85);
+  --progress-ahead: #f57c00;
+  --progress-passed: rgba(0, 0, 0, 0.34);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  margin: 0;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Focus rings appear on keyboard focus only. The previous rule applied an
+   outline to every button and input unconditionally, which drew a blue ring
+   around every chip, card and row on the page. */
+:focus-visible {
+  outline: 1.5px solid var(--edge-strong);
+  outline-offset: 2px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.cap {
+  color: var(--ink-3);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.clip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scroll {
+  overflow-y: auto;
+  scrollbar-color: var(--ink-3) transparent;
+  scrollbar-width: thin;
+}
+
+.scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scroll::-webkit-scrollbar-thumb {
+  background: var(--ink-3);
+  border-radius: 999px;
+}
+
+/* ---------------------------------------------------------------------------
+   Map — full bleed, the dominant surface
+--------------------------------------------------------------------------- */
+
+#map {
+  background: var(--map-bg);
+  inset: 0;
+  position: fixed;
+  z-index: 0;
+}
+
+/* CARTO's dark label tiles are tuned for indoor screens — mid-grey text that
+   dies in sunlight. Driven hard toward white, halos deepened, so names stay
+   readable on a phone outdoors. Applies only to the label overlay; the
+   remapped geometry beneath is untouched. */
+.label-tiles {
+  filter: brightness(1.55) contrast(1.35);
+}
+
+/* Dark tiles are regraded per-pixel on canvas in app.js (makeBaseLayer) —
+   CARTO's dark style couldn't work because sea and roads share one grey. No
+   CSS filter here: it would double-grade the already-remapped canvases. */
+
+.leaflet-container {
+  background: var(--map-bg);
+  font-family: inherit;
+}
+
+.leaflet-control-attribution {
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: var(--r-badge) 0 0 0;
+  color: var(--ink-3);
+  font-size: 9.5px;
+  padding: 2px 8px;
+}
+
+.leaflet-control-attribution a {
+  color: var(--ink-2);
+  text-decoration: none;
+}
+
+/* The bundled attribution flag is the only stray colour on the page. */
+.leaflet-attribution-flag {
+  display: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Floating glass rail
+--------------------------------------------------------------------------- */
+
+.rail {
+  background: var(--glass);
+  backdrop-filter: blur(var(--blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(150%);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-panel);
+  bottom: calc(var(--sp-4) + var(--safe-bottom));
+  box-shadow: var(--shadow);
+  display: flex;
+  left: calc(var(--sp-4) + var(--safe-left));
+  overflow: hidden;
+  position: fixed;
+  top: calc(var(--sp-4) + var(--safe-top));
+  width: 648px;
+  z-index: 500;
+}
+
+.discover {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-height: 0;
+  padding-top: var(--sp-5);
+  width: 304px;
+}
+
+/* Route detail lives in its own column and appears only once a route is on. */
+.detail {
+  background: var(--glass-raised);
+  border-left: 1px solid var(--rule);
+  display: none;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+body.has-route .detail,
+body.has-journey .detail {
+  display: flex;
+}
+
+/* Desktop only. Unscoped, this selector outranks the phone sheet's plain
+   `.rail` rule — three classes against one — and media queries add no
+   specificity, so it won no matter where it sat in the file. That pinned the
+   bottom sheet to a 336px column with map showing down one side instead of
+   letting it span the screen. Scoping the rule is the fix; another override
+   on top would just be a fourth rule in the same fight. */
+@media (min-width: 1101px) {
+  body:not(.has-route):not(.has-journey) .rail {
+    width: 336px;
+  }
+}
+
+body:not(.has-route):not(.has-journey) .discover {
+  width: 100%;
+}
+
+/* Header */
+
+.brand {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-5) var(--sp-2);
+}
+
+.brand-mark {
+  background: var(--invert-bg);
+  border-radius: var(--r-badge);
+  display: grid;
+  flex: none;
+  height: 34px;
+  place-items: center;
+  width: 34px;
+}
+
+.brand-mark svg {
+  height: 19px;
+  width: 19px;
+}
+
+.brand-copy {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+h1 {
+  color: var(--ink);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.eyebrow {
+  color: var(--ink-3);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  margin: 5px 0 0;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.icon-btn {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-badge);
+  color: var(--ink-2);
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  height: 30px;
+  justify-content: center;
+  transition: background 0.14s ease, color 0.14s ease;
+  width: 30px;
+}
+
+.icon-btn:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.icon-btn.small {
+  border-radius: 7px;
+  height: 26px;
+  width: 26px;
+}
+
+html[data-theme="dark"] .icon-sun,
+html[data-theme="light"] .icon-moon {
+  display: none;
+}
+
+/* Search */
+
+.search {
+  align-items: center;
+  background: var(--glass-raised);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  display: flex;
+  gap: var(--sp-2) 10px;
+  height: 68px;
+  margin: var(--sp-4) var(--sp-5);
+  padding: 0 var(--sp-4);
+  position: relative;
+  transition: border-color 0.14s ease;
+}
+
+.search:focus-within {
+  border-color: var(--edge-strong);
+}
+
+.search > svg {
+  height: 18px;
+  width: 18px;
+  color: var(--ink-3);
+  flex: none;
+}
+
+.search input {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  flex-grow: 1;
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 500;
+  min-width: 0;
+  outline: none;
+}
+
+.search input::placeholder {
+  color: var(--ink-3);
+}
+
+.search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+kbd {
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  color: var(--ink-3);
+  flex: none;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 6px;
+}
+
+.clear-btn {
+  align-items: center;
+  background: var(--selected);
+  border: 0;
+  border-radius: 999px;
+  color: var(--ink-2);
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  height: 20px;
+  justify-content: center;
+  width: 20px;
+}
+
+.clear-btn:hover {
+  color: var(--ink);
+}
+
+/* Chip rows */
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 var(--sp-5) 18px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip-row.compact {
+  gap: 5px;
+}
+
+/* The add chip is an invitation, not a route — dashed border keeps it from
+   masquerading as one. */
+.chip.add {
+  border-style: dashed;
+  color: var(--ink-3);
+  font-size: 15px;
+  font-weight: 500;
+  justify-content: center;
+  min-width: 40px;
+}
+
+.chip.add:hover {
+  border-color: var(--edge-strong);
+  color: var(--ink-2);
+}
+
+/* Mode filter: one row, evenly spread. */
+.chip-row.modes {
+  display: flex;
+}
+
+.chip-row.modes .chip {
+  flex: 1;
+  justify-content: center;
+}
+
+/* The planner has its own From/To; the route search bar is hidden there. */
+body.view-journey .search {
+  display: none;
+}
+
+.chip {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-badge);
+  color: var(--ink-2);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.chip:hover {
+  border-color: var(--edge-strong);
+  color: var(--ink);
+}
+
+.chip.on {
+  background: var(--invert-bg);
+  border-color: transparent;
+  color: var(--invert-ink);
+}
+
+.chip small {
+  color: var(--ink-3);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.chip.on small {
+  color: var(--invert-ink);
+  opacity: 0.6;
+}
+
+.chip-row.compact .chip {
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 500;
+  height: 24px;
+  padding: 0 9px;
+}
+
+/* Route list */
+
+.list-head {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 var(--sp-5) var(--sp-2);
+}
+
+.tally {
+  color: var(--ink-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.routes {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+  padding: 0 var(--sp-3) var(--sp-4);
+}
+
+/* Clean rows with hairline separators — no per-card borders. */
+.route-row {
+  align-items: flex-start;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-btn);
+  border-top: 1px solid var(--rule);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-family: inherit;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 10px var(--sp-3) var(--sp-2);
+  position: relative;
+  text-align: left;
+  transition: background 0.14s ease;
+  width: 100%;
+}
+
+.route-row:hover {
+  background: var(--hover);
+}
+
+.route-row.active {
+  background: var(--selected);
+  border-top-color: transparent;
+}
+
+/* A short vertical bar marks the selection instead of a coloured border. */
+.route-row.active::before {
+  background: var(--ink);
+  border-radius: 999px;
+  content: "";
+  height: 26px;
+  left: 0;
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  width: 2px;
+}
+
+.badge {
+  align-items: center;
+  background: var(--invert-bg);
+  border-radius: var(--r-badge);
+  color: var(--invert-ink);
+  display: flex;
+  flex: none;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  height: 26px;
+  justify-content: center;
+  min-width: 40px;
+  padding: 0 7px;
+}
+
+.badge.large {
+  font-size: 17px;
+  height: 34px;
+  min-width: 46px;
+  padding: 0 10px;
+}
+
+.route-copy {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  gap: 3px;
+  min-width: 0;
+}
+
+.route-origin {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.route-dest {
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.route-meta {
+  color: var(--ink-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.route-row svg {
+  color: var(--ink-3);
+  flex: none;
+  margin-top: 6px;
+}
+
+.rail-foot {
+  border-top: 1px solid var(--rule);
+  color: var(--ink-3);
+  font-size: 10.5px;
+  padding: var(--sp-3) var(--sp-5) 14px;
+  text-align: center;
+}
+
+/* Skeletons */
+
+.sk-row {
+  align-items: center;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 10px var(--sp-3) var(--sp-2);
+}
+
+.sk {
+  background: var(--hover);
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+}
+
+.sk::after {
+  animation: shimmer 1.4s infinite;
+  background: linear-gradient(90deg, transparent, var(--hover), transparent);
+  content: "";
+  inset: 0;
+  position: absolute;
+}
+
+@keyframes shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.sk-badge {
+  flex: none;
+  height: 26px;
+  width: 40px;
+}
+
+.sk-lines {
+  display: grid;
+  flex-grow: 1;
+  gap: 7px;
+}
+
+.sk-line {
+  height: 10px;
+  width: 80%;
+}
+
+.sk-line.short {
+  width: 45%;
+}
+
+/* ---------------------------------------------------------------------------
+   Selected route
+--------------------------------------------------------------------------- */
+
+.detail-top {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  padding: var(--sp-5) var(--sp-5) 0;
+}
+
+.detail-actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.live-tag {
+  align-items: center;
+  color: var(--ink-2);
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 600;
+  gap: 6px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.live-tag::before {
+  background: var(--ink-3);
+  border-radius: 999px;
+  content: "";
+  height: 6px;
+  width: 6px;
+}
+
+/* Green means live data, and nothing else. */
+.live-tag[data-tone="live"]::before {
+  background: var(--live);
+}
+
+.live-tag[data-tone="error"] {
+  color: var(--ink-2);
+}
+
+/* The body is a flex column: heading, stats, direction and tabs are pinned
+   while only the list beneath them scrolls. */
+.detail-body {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+}
+
+.detail-fixed {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+}
+
+.detail-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: 18px var(--sp-5) 0;
+}
+
+.detail-head .badge {
+  align-self: flex-start;
+}
+
+.detail-title {
+  color: var(--ink);
+  font-size: 17.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.32;
+}
+
+.detail-title span {
+  color: var(--ink-2);
+  display: block;
+}
+
+.detail-sub {
+  color: var(--ink-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Statistics: typography and rules rather than four cards. */
+/* All four on one row: they are short numbers and the two-row grid cost more
+   vertical space than it was worth, especially on a phone. */
+.stats {
+  border-bottom: 1px solid var(--rule);
+  border-top: 1px solid var(--rule);
+  display: grid;
+  gap: var(--sp-2);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: var(--sp-5) var(--sp-5) 0;
+  padding: var(--sp-3) 0;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.stat-value {
+  color: var(--ink);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.stat.dim .stat-value {
+  color: var(--ink-3);
+}
+
+.stat-label {
+  color: var(--ink-3);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+/* Direction */
+
+.direction {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-btn);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-family: inherit;
+  gap: 10px;
+  margin: var(--sp-4) var(--sp-5) 0;
+  padding: 10px var(--sp-3);
+  text-align: left;
+  transition: background 0.14s ease;
+}
+
+.direction:hover {
+  background: var(--hover);
+}
+
+.direction-copy {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.direction-copy strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.direction svg {
+  color: var(--ink-2);
+  flex: none;
+}
+
+/* Routes / Plan a journey: plain text tabs, active marked by an underline —
+   no container box, no filled pill. The detail pane's stops/arrivals tabs
+   keep the segmented look below. */
+.tabs.view-tabs {
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  gap: 0;
+  margin-top: 0;
+  padding: 0;
+}
+
+.view-tabs .tab {
+  background: transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--ink-3);
+  font-size: 14px;
+  margin-bottom: -1px;
+  padding: 12px 0;
+}
+
+.view-tabs .tab.active {
+  background: transparent;
+  border-bottom-color: var(--ink);
+  color: var(--ink);
+}
+
+/* Segmented control */
+
+.tabs {
+  border: 1px solid var(--edge);
+  border-radius: var(--r-btn);
+  display: grid;
+  gap: var(--sp-1);
+  grid-template-columns: 1fr 1fr;
+  margin: 14px var(--sp-5) 0;
+  padding: 3px;
+}
+
+.tab {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-badge);
+  color: var(--ink-3);
+  cursor: pointer;
+  display: flex;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  gap: 6px;
+  height: 32px;
+  justify-content: center;
+  transition: color 0.14s ease;
+}
+
+.tab:hover {
+  color: var(--ink-2);
+}
+
+.tab.active {
+  background: var(--invert-bg);
+  color: var(--invert-ink);
+}
+
+.tab-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+.list-title {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+  padding: var(--sp-4) var(--sp-5) 10px;
+}
+
+.list-title small {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.detail-scroll {
+  flex-grow: 1;
+  min-height: 0;
+  padding: 0 var(--sp-5) var(--sp-5);
+}
+
+/* ---------------------------------------------------------------------------
+   Stop timeline
+--------------------------------------------------------------------------- */
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.stop-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-badge);
+  color: var(--ink-2);
+  cursor: pointer;
+  display: flex;
+  font-family: inherit;
+  gap: var(--sp-3);
+  min-height: 42px;
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) 26px;
+  position: relative;
+  text-align: left;
+  transition: background 0.14s ease;
+  width: 100%;
+}
+
+.stop-row:hover {
+  background: var(--hover);
+}
+
+/* A thin hairline connects the stops; it stops short at each terminus. */
+.stop-row::before {
+  background: var(--edge-strong);
+  bottom: 0;
+  content: "";
+  left: 8px;
+  opacity: 0.8;
+  position: absolute;
+  top: 0;
+  width: 1px;
+}
+
+.stop-row.first::before {
+  top: 50%;
+}
+
+.stop-row.last::before {
+  bottom: 50%;
+}
+
+.stop-node {
+  background: transparent;
+  border: 1.5px solid var(--ink-3);
+  border-radius: 999px;
+  height: 9px;
+  left: 4.5px;
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  width: 9px;
+}
+
+.stop-row.active .stop-node,
+.stop-row.terminus .stop-node {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.stop-row.active {
+  background: var(--selected);
+}
+
+.stop-name {
+  flex-grow: 1;
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 0;
+}
+
+.stop-row.active .stop-name {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.stop-eta {
+  color: var(--ink-2);
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.stop-eta.now {
+  color: var(--ink);
+}
+
+.stop-eta.none {
+  color: var(--ink-3);
+}
+
+/* The next departure sits under the first, so "3 min / then 8, 14 min" reads
+   as one block without widening the row. */
+.stop-times {
+  align-items: flex-end;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Green means the number came from a vehicle reporting its position right now,
+   not from the timetable. It is the one place colour carries information. */
+.stop-eta.live,
+.arrival-eta.live {
+  color: var(--live);
+}
+
+.stop-then {
+  color: var(--ink-3);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Scheduled rather than live: same column, clearly softer. */
+.stop-eta.sched {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+.stop-flag {
+  align-items: center;
+  background: var(--selected);
+  border-radius: 6px;
+  color: var(--ink);
+  display: inline-flex;
+  flex: none;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  gap: 4px;
+  padding: 2px 7px;
+}
+
+/* Arrivals */
+
+.arrivals {
+  display: flex;
+  flex-direction: column;
+}
+
+.arrival-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-badge);
+  border-top: 1px solid var(--rule);
+  cursor: pointer;
+  display: flex;
+  font-family: inherit;
+  gap: var(--sp-3);
+  padding: 11px var(--sp-2);
+  text-align: left;
+  transition: background 0.14s ease;
+  width: 100%;
+}
+
+.arrival-row:hover {
+  background: var(--hover);
+}
+
+.bus-chip {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  color: var(--ink-2);
+  display: flex;
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  height: 24px;
+  justify-content: center;
+  min-width: 34px;
+  padding: 0 6px;
+}
+
+.arrival-copy {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.arrival-stop {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.arrival-meta {
+  color: var(--ink-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.arrival-eta {
+  color: var(--ink-2);
+  flex: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.arrival-eta.now {
+  color: var(--ink);
+}
+
+/* Notices, placeholders, errors */
+
+.notice {
+  align-items: center;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-btn);
+  color: var(--ink-2);
+  display: flex;
+  font-size: 11.5px;
+  gap: var(--sp-2);
+  line-height: 1.45;
+  margin-bottom: 10px;
+  padding: var(--sp-2) 10px;
+}
+
+.notice svg {
+  color: var(--ink-3);
+  flex: none;
+}
+
+/* Notices that sit in the pinned header rather than inside the scroller. */
+.notice.pinned {
+  align-items: flex-start;
+  line-height: 1.4;
+  margin: var(--sp-4) var(--sp-5) 0;
+}
+
+.placeholder {
+  color: var(--ink-3);
+  display: grid;
+  font-size: 12.5px;
+  gap: 6px;
+  justify-items: center;
+  line-height: 1.55;
+  padding: var(--sp-8) var(--sp-4);
+  text-align: center;
+}
+
+.placeholder strong {
+  color: var(--ink-2);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.placeholder-icon {
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  color: var(--ink-3);
+  display: grid;
+  height: 42px;
+  margin-bottom: var(--sp-1);
+  place-items: center;
+  width: 42px;
+}
+
+.empty {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.6;
+  padding: 28px 10px;
+  text-align: center;
+}
+
+.empty strong {
+  color: var(--ink-2);
+  display: block;
+  font-size: 13.5px;
+  font-weight: 500;
+  margin-bottom: var(--sp-1);
+}
+
+.error-box {
+  border: 1px solid var(--edge);
+  border-radius: var(--r-btn);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: var(--sp-4) var(--sp-5);
+  padding: 10px var(--sp-3);
+}
+
+/* ---------------------------------------------------------------------------
+   Floating status bar & map controls
+--------------------------------------------------------------------------- */
+
+.status-bar {
+  align-items: center;
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  box-shadow: var(--shadow);
+  display: flex;
+  gap: var(--sp-3);
+  height: 44px;
+  padding: 0 6px 0 14px;
+  position: fixed;
+  right: calc(var(--sp-5) + var(--safe-right));
+  top: calc(var(--sp-5) + var(--safe-top));
+  z-index: 600;
+}
+
+.live-dot {
+  background: var(--ink-3);
+  border-radius: 999px;
+  flex: none;
+  height: 6px;
+  width: 6px;
+}
+
+.live-dot.active {
+  background: var(--live);
+}
+
+#liveText {
+  color: var(--ink);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.bar-rule {
+  background: var(--rule);
+  flex: none;
+  height: 20px;
+  width: 1px;
+}
+
+.pill {
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-badge);
+  color: var(--ink-2);
+  cursor: pointer;
+  flex: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  height: 32px;
+  padding: 0 var(--sp-3);
+  transition: background 0.14s ease, color 0.14s ease;
+  white-space: nowrap;
+}
+
+.pill:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.pill.on {
+  background: var(--invert-bg);
+  border-color: transparent;
+  color: var(--invert-ink);
+}
+
+.status-bar .icon-btn {
+  height: 32px;
+  width: 32px;
+}
+
+/* The refresh control reads as part of the bar, not a boxed button of its
+   own — the pill next to it is boxed because it carries a state. */
+.status-bar .icon-btn {
+  border: 0;
+}
+
+#refreshButton.spin svg {
+  animation: spin 0.6s linear;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.map-controls {
+  bottom: calc(var(--sp-5) + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  position: fixed;
+  right: calc(var(--sp-5) + var(--safe-right));
+  z-index: 600;
+}
+
+.map-btn {
+  align-items: center;
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  box-shadow: var(--shadow-sm);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  height: 40px;
+  justify-content: center;
+  transition: background 0.14s ease;
+  width: 40px;
+}
+
+.map-btn:hover {
+  background: var(--glass-raised);
+}
+
+#starRoute.on {
+  color: var(--invert-bg);
+}
+
+#starRoute.on svg path {
+  fill: currentColor;
+}
+
+.map-btn.on {
+  background: var(--invert-bg);
+  border-color: transparent;
+  color: var(--invert-ink);
+}
+
+.map-btn.loading svg {
+  animation: spin 1s linear infinite;
+}
+
+/* Grouped zoom buttons read as one control. */
+.map-btn-group {
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.map-btn-group .map-btn {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.map-btn-group .map-btn + .map-btn {
+  border-top: 1px solid var(--rule);
+}
+
+/* ---------------------------------------------------------------------------
+   Map overlays — popups, markers
+--------------------------------------------------------------------------- */
+
+.app-popup .leaflet-popup-content-wrapper {
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  box-shadow: var(--shadow);
+  color: var(--ink-2);
+}
+
+.app-popup .leaflet-popup-content {
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin: 11px 13px;
+  min-width: 160px;
+}
+
+.app-popup .leaflet-popup-tip {
+  background: var(--glass);
+  border: 1px solid var(--edge);
+}
+
+.popup-title {
+  align-items: center;
+  color: var(--ink);
+  display: flex;
+  gap: var(--sp-2);
+  margin-bottom: 5px;
+}
+
+.popup-title strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.popup-rows {
+  color: var(--ink-3);
+  display: grid;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  gap: 2px;
+}
+
+.popup-rows .strong {
+  color: var(--ink-2);
+}
+
+.app-tooltip {
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 7px;
+}
+
+.app-tooltip::before {
+  display: none;
+}
+
+/* Live bus: white disc, dark glyph, thin outline, small glass plate. */
+.bus-marker {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  height: 34px;
+  width: 34px;
+}
+
+.bus-puck {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  display: grid;
+  flex: none;
+  height: 34px;
+  place-items: center;
+  width: 34px;
+}
+
+.bus-puck svg {
+  height: 19px;
+  width: 19px;
+}
+
+.bus-tag {
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+  color: var(--ink);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.bus-marker.stale {
+  opacity: 0.5;
+}
+
+.user-dot {
+  background: var(--invert-bg);
+  border: 2px solid var(--invert-ink);
+  border-radius: 999px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  height: 14px;
+  width: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Narrow screens — the rail becomes a bottom sheet
+--------------------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  .rail {
+    border-radius: var(--r-panel) var(--r-panel) 0 0;
+    bottom: 0;
+    flex-direction: column;
+    left: 0;
+    padding-bottom: var(--safe-bottom);
+    right: 0;
+    width: auto;
+  }
+
+  .discover,
+  body:not(.has-route) .discover {
+    width: 100%;
+  }
+
+  /* No room for two columns: details take over the sheet. */
+  body.has-route .discover {
+    display: none;
+  }
+
+  /* The planner keeps its inputs; steps sit under them instead. */
+  body.has-journey .detail {
+    border-top: 1px solid var(--rule);
+  }
+
+  .detail {
+    border-left: 0;
+  }
+
+  .status-bar {
+    left: calc(var(--sp-3) + var(--safe-left));
+    right: calc(var(--sp-3) + var(--safe-right));
+    top: calc(var(--sp-3) + var(--safe-top));
+  }
+
+
+}
+
+/* Direction arrows: the accent colour with a casing outline so they read on
+   any basemap without adding another hue. */
+.route-arrow {
+  display: block;
+  height: 16px;
+  width: 16px;
+}
+
+.route-arrow svg {
+  display: block;
+  height: 16px;
+  width: 16px;
+}
+
+.route-arrow svg path {
+  fill: var(--route-accent, var(--ink));
+  paint-order: stroke fill;
+  stroke: var(--casing);
+  stroke-width: 1.6px;
+}
+
+/* ---------------------------------------------------------------------------
+   Map legend
+   Only symbols the app actually draws. The kiosk's ON/OFF Trip, Contingency
+   and Disabled Friendly states are absent from the public GTFS-RT feed, so
+   they are deliberately not invented here.
+--------------------------------------------------------------------------- */
+
+.legend {
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  bottom: calc(var(--sp-5) + var(--safe-bottom));
+  box-shadow: var(--shadow);
+  max-width: 208px;
+  padding: var(--sp-3) 14px;
+  position: fixed;
+  right: calc(72px + var(--safe-right));
+  z-index: 600;
+}
+
+.legend-head {
+  align-items: center;
+  display: flex;
+  gap: var(--sp-4);
+  justify-content: space-between;
+}
+
+.legend-body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+}
+
+.legend-body li {
+  align-items: center;
+  color: var(--ink-2);
+  display: flex;
+  font-size: 11.5px;
+  font-weight: 500;
+  gap: 10px;
+}
+
+/* Nothing to tap when the feed carries no vehicles. */
+body.no-live-feed .legend-note {
+  display: none;
+}
+
+.legend-note {
+  border-top: 1px solid var(--rule);
+  color: var(--ink-3);
+  font-size: 10.5px;
+  line-height: 1.45;
+  margin: var(--sp-3) 0 0;
+  padding-top: 10px;
+}
+
+/* Collapsed: the header alone stays, as a compact handle. */
+.legend.collapsed .legend-body,
+.legend.collapsed .legend-note {
+  display: none;
+}
+
+.legend .icon-expand {
+  display: none;
+}
+
+.legend.collapsed .icon-expand {
+  display: block;
+}
+
+.legend.collapsed .icon-collapse {
+  display: none;
+}
+
+/* Swatches mirror the real map symbols. */
+.lg {
+  display: block;
+  flex: none;
+}
+
+.lg-bus {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  border-radius: 999px;
+  display: grid;
+  height: 20px;
+  place-items: center;
+  width: 20px;
+}
+
+.lg-bus svg {
+  height: 12px;
+  width: 12px;
+}
+
+.lg-bus.stale {
+  opacity: 0.5;
+}
+
+.lg-stop {
+  background: #ffffff;
+  border: 2px solid var(--route-accent, var(--ink));
+  border-radius: 999px;
+  height: 11px;
+  margin: 0 4px;
+  width: 11px;
+}
+
+.lg-terminus {
+  background: var(--ink);
+  border-radius: 999px;
+  height: 11px;
+  margin: 0 4px;
+  width: 11px;
+}
+
+.lg-arrow {
+  height: 14px;
+  width: 18px;
+}
+
+.lg-arrow svg {
+  display: block;
+  height: 14px;
+  rotate: 90deg;
+  width: 14px;
+}
+
+.lg-arrow svg path {
+  fill: var(--route-accent, var(--ink));
+  paint-order: stroke fill;
+  stroke: var(--casing);
+  stroke-width: 1.6px;
+}
+
+.lg-line {
+  border-radius: 999px;
+  height: 4px;
+  margin: 0 1px;
+  width: 18px;
+}
+
+.lg-line.ahead {
+  background: var(--progress-ahead);
+  height: 5px;
+}
+
+.lg-line.passed {
+  background: repeating-linear-gradient(
+    to right,
+    var(--progress-passed) 0 3px,
+    transparent 3px 8px
+  );
+  height: 3px;
+}
+
+.lg-line.accent {
+  background: var(--route-accent, var(--ink-2));
+}
+
+.lg-oku {
+  color: var(--ink-2);
+  height: 15px;
+  width: 15px;
+}
+
+.lg-oku svg {
+  display: block;
+  height: 15px;
+  width: 15px;
+}
+
+/* Only rail feeds flag accessibility, so the row appears only for rail. */
+.legend-rail {
+  display: none !important;
+}
+
+body.mode-rail .legend-rail {
+  display: flex !important;
+}
+
+.lg-you {
+  background: var(--invert-bg);
+  border: 2px solid var(--invert-ink);
+  border-radius: 999px;
+  height: 12px;
+  margin: 0 4px;
+  width: 12px;
+}
+
+@media (max-width: 1100px) {
+  .legend {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Journey planner
+--------------------------------------------------------------------------- */
+
+.view-tabs {
+  margin: 0 var(--sp-5) var(--sp-4);
+}
+
+/* The Routes/Journey wrapper must carry the flex chain through, or the route
+   list inside it sizes to its content and gets clipped by the rail instead of
+   scrolling. It is a flex column that takes the leftover height. */
+#routesView {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+#routesView.hidden {
+  display: none !important;
+}
+
+.journey {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  gap: var(--sp-3);
+  min-height: 0;
+  padding: 0 var(--sp-5);
+}
+
+/* Once a route is on screen the inputs are in the way, so they fold into a
+   single line that reopens them. */
+.jp-summary {
+  align-items: center;
+  background: var(--glass-raised);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  display: none;
+  gap: var(--sp-2);
+  min-height: 42px;
+  padding: 0 6px 0 var(--sp-3);
+}
+
+.journey.collapsed .jp-summary {
+  display: flex;
+}
+
+.journey.collapsed .jp-field,
+.journey.collapsed .jp-go {
+  display: none;
+}
+
+.jp-summary-text {
+  align-items: center;
+  color: var(--ink-2);
+  display: flex;
+  flex-grow: 1;
+  font-size: 13px;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.jp-summary-text b {
+  color: var(--ink);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jp-summary-arrow {
+  color: var(--ink-3);
+  flex: none;
+}
+
+.jp-edit {
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-badge);
+  color: var(--ink-2);
+  cursor: pointer;
+  flex: none;
+  font-family: inherit;
+  font-size: 12px;
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.jp-edit:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.jp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+
+.jp-row {
+  align-items: center;
+  background: var(--glass-raised);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  display: flex;
+  gap: var(--sp-2);
+  height: 42px;
+  padding: 0 6px 0 var(--sp-3);
+  transition: border-color 0.14s ease;
+}
+
+.jp-row:focus-within {
+  border-color: var(--edge-strong);
+}
+
+.jp-row input {
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  flex-grow: 1;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  min-width: 0;
+  outline: none;
+}
+
+.jp-row input::placeholder {
+  color: var(--ink-3);
+}
+
+.jp-results {
+  display: flex;
+  flex-direction: column;
+}
+
+.jp-results:empty {
+  display: none;
+}
+
+.jp-result {
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-badge);
+  border-top: 1px solid var(--rule);
+  color: var(--ink-2);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 9px var(--sp-2);
+  text-align: left;
+}
+
+.jp-result:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.jp-result small {
+  color: var(--ink-3);
+  display: block;
+  font-size: 10.5px;
+  margin-top: 2px;
+}
+
+.jp-go {
+  background: var(--invert-bg);
+  border: 0;
+  border-radius: var(--r-btn);
+  color: var(--invert-ink);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 40px;
+}
+
+.jp-go:disabled {
+  background: transparent;
+  border: 1px solid var(--edge);
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.jp-output {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  gap: var(--sp-2);
+  min-height: 0;
+  padding-bottom: var(--sp-4);
+}
+
+/* An itinerary reads as one block: headline times, then the legs. */
+.itin {
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font-family: inherit;
+  gap: 10px;
+  padding: var(--sp-3);
+  text-align: left;
+  transition: background 0.14s ease, border-color 0.14s ease;
+  width: 100%;
+}
+
+.itin:hover {
+  background: var(--hover);
+}
+
+.itin.active {
+  background: var(--selected);
+  border-color: var(--edge-strong);
+}
+
+.itin-head {
+  align-items: baseline;
+  display: flex;
+  gap: var(--sp-2);
+  justify-content: space-between;
+}
+
+.itin-time {
+  color: var(--ink);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.itin-dur {
+  color: var(--ink-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.itin-meta {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.itin-lines {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.itin-arrow {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.itin-legs {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.itin-leg {
+  align-items: center;
+  color: var(--ink-2);
+  display: flex;
+  font-size: 12px;
+  gap: var(--sp-2);
+}
+
+.itin-leg .badge {
+  font-size: 11px;
+  height: 21px;
+  min-width: 32px;
+  padding: 0 6px;
+}
+
+.itin-leg .walk-icon {
+  color: var(--ink-3);
+  flex: none;
+}
+
+.itin-leg-copy {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.itin-leg-copy b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.itin-leg-time {
+  color: var(--ink-3);
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.jp-alert {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-btn);
+  color: var(--ink-2);
+  cursor: pointer;
+  display: flex;
+  font-family: inherit;
+  font-size: 12px;
+  gap: var(--sp-2);
+  justify-content: center;
+  min-height: 36px;
+  width: 100%;
+}
+
+.jp-alert:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.jp-alert.on {
+  background: var(--invert-bg);
+  border-color: transparent;
+  color: var(--invert-ink);
+}
+
+/* Journey drawn on the map */
+.jp-pin {
+  background: var(--invert-bg);
+  border: 2px solid var(--invert-ink);
+  border-radius: 999px;
+  height: 12px;
+  width: 12px;
+}
+
+.jp-pin.terminal {
+  height: 16px;
+  width: 16px;
+}
+
+/* ---------------------------------------------------------------------------
+   Journey timeline — times in a gutter, one continuous line, every stop on it
+--------------------------------------------------------------------------- */
+
+.step-alert {
+  margin: var(--sp-4) var(--sp-5) 0;
+  width: auto;
+}
+
+.tl {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+}
+
+.tl-row {
+  display: grid;
+  gap: 0 12px;
+  grid-template-columns: 42px 16px minmax(0, 1fr);
+}
+
+/* Each row paints its own half-slices of the line, so a leg's colour ends
+   exactly at the station where the traveller gets off. */
+.tl-rail {
+  position: relative;
+}
+
+.tl-rail::before,
+.tl-rail::after {
+  content: "";
+  left: 50%;
+  position: absolute;
+  translate: -50% 0;
+  width: 3px;
+}
+
+.tl-rail::before {
+  background: var(--top);
+  height: 50%;
+  top: 0;
+}
+
+.tl-rail::after {
+  background: var(--bottom);
+  bottom: 0;
+  top: 50%;
+}
+
+.tl-node {
+  background: var(--page);
+  border: 3px solid var(--node);
+  border-radius: 999px;
+  height: 13px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  translate: -50% -50%;
+  width: 13px;
+  z-index: 1;
+}
+
+.tl-time {
+  color: var(--ink);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  padding-top: 1px;
+  text-align: right;
+}
+
+.tl-body {
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tl-station {
+  padding: 7px 0;
+}
+
+.tl-stop {
+  display: block;
+}
+
+.tl-tags {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+/* Rail station codes match what is printed on the platform signage. */
+.tl-code {
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 1px 5px;
+}
+
+/* Exact when the feed names it (bus bay, station entrance). */
+.tl-platform {
+  background: var(--selected);
+  border-radius: 5px;
+  color: var(--ink);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 6px;
+}
+
+/* Inferred from the direction the platform is signed by, not a feed value —
+   outlined rather than filled so it does not read as an official number. */
+.tl-platform.inferred {
+  background: transparent;
+  border: 1px dashed var(--edge-strong);
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+/* Intermediate stops sit lighter and smaller — present, but not shouting. */
+.tl-minor {
+  padding: 4px 0;
+}
+
+.tl-minor .tl-time {
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.tl-minor .tl-body {
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.tl-minor .tl-node {
+  border-width: 2px;
+  height: 8px;
+  width: 8px;
+}
+
+.tl-seg {
+  padding: 6px 0;
+}
+
+.tl-seg .tl-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tl-ride {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.tl-towards {
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.tl-meta {
+  color: var(--ink-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-walk {
+  align-items: center;
+  color: var(--ink-2);
+  display: flex;
+  font-size: 12.5px;
+  gap: 7px;
+}
+
+.badge.inline {
+  display: inline-flex;
+  flex: none;
+  font-size: 11px;
+  height: 20px;
+  min-width: 30px;
+  padding: 0 7px;
+}
+
+/* Start/Share bar at the foot of the journey timeline. Sticky, so it stays
+   reachable however far the timeline is scrolled. */
+.jp-actions {
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+  border-top: 1px solid var(--rule);
+  bottom: 0;
+  display: flex;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-5) calc(var(--sp-3) + var(--safe-bottom));
+  position: sticky;
+  z-index: 4;
+}
+
+.jp-actions .jp-go {
+  flex: 1;
+  margin: 0;
+}
+
+.jp-start.on {
+  background: var(--live);
+  color: #04120a;
+}
+
+.jp-share {
+  background: transparent;
+  border: 1px solid var(--edge-strong);
+  color: var(--ink);
+  flex: 0 0 32%;
+}
+
+.jp-recent {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Departure time: "Now" chip beside a native time field. */
+.jp-when {
+  align-items: center;
+}
+
+.jp-when .chip {
+  flex: none;
+}
+
+#jpTime {
+  appearance: none;
+  background: var(--glass-raised);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  color: var(--ink);
+  flex: 1;
+  font-family: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  height: 44px;
+  padding: 0 var(--sp-3);
+}
+
+#jpTime:focus {
+  border-color: var(--edge-strong);
+  outline: none;
+}
+
+/* Country switcher — floats under the status bar, same glass. */
+.region-toggle {
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-badge);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  position: fixed;
+  right: calc(var(--sp-5) + var(--safe-right));
+  top: calc(var(--sp-5) + var(--safe-top) + 52px);
+  z-index: 620;
+}
+
+.region-btn {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--r-badge) - 2px);
+  color: var(--ink-2);
+  cursor: pointer;
+  display: flex;
+  font-family: inherit;
+  font-size: 15px;
+  gap: 5px;
+  height: 30px;
+  padding: 0 9px;
+}
+
+.region-btn small {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.region-btn.on {
+  background: var(--invert-bg);
+  color: var(--invert-ink);
+}
+
+@media (max-width: 1100px) {
+  .region-toggle {
+    right: calc(var(--sp-3) + var(--safe-right));
+    top: calc(var(--sp-5) + var(--safe-top) + 56px);
+  }
+}
+
+/* Install card — the app introducing itself: icon, name, one line of pitch,
+   then the platform's real install path. Slides up from the bottom on
+   desktop, sits above the sheet's top edge on phones. */
+.install-card {
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(150%);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow);
+  left: 50%;
+  max-width: 340px;
+  opacity: 0;
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  position: fixed;
+  top: calc(var(--sp-5) + var(--safe-top) + 56px);
+  transform: translate(-50%, -8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  width: calc(100vw - 2 * var(--sp-4));
+  z-index: 900;
+}
+
+.install-card.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.install-close {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: var(--ink-3);
+  cursor: pointer;
+  display: flex;
+  height: 28px;
+  justify-content: center;
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  width: 28px;
+}
+
+.install-close:hover { color: var(--ink); }
+
+.install-head {
+  align-items: center;
+  display: flex;
+  gap: var(--sp-3);
+}
+
+.install-icon {
+  border-radius: 11px;
+  box-shadow: var(--shadow-sm);
+  flex: none;
+}
+
+.install-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.install-copy strong { font-size: 14.5px; letter-spacing: -0.01em; }
+.install-copy span { color: var(--ink-2); font-size: 12px; }
+
+.install-go {
+  background: var(--invert-bg);
+  border: 0;
+  border-radius: var(--r-btn);
+  color: var(--invert-ink);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: var(--sp-3);
+  padding: 10px 0;
+  width: 100%;
+}
+
+.install-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  list-style: none;
+  margin: var(--sp-3) 0 2px;
+  padding: 0;
+}
+
+.install-steps li {
+  align-items: center;
+  color: var(--ink-2);
+  display: flex;
+  font-size: 13px;
+  gap: 10px;
+}
+
+.install-steps b { color: var(--ink); font-weight: 600; }
+
+.install-glyph {
+  align-items: center;
+  background: var(--hover);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  color: var(--ink);
+  display: flex;
+  flex: none;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+/* The reload offer sits out of the way until tapped. */
+.update-prompt {
+  background: var(--invert-bg);
+  border: 0;
+  border-radius: var(--r-btn);
+  bottom: calc(var(--sp-5) + var(--safe-bottom));
+  box-shadow: var(--shadow);
+  color: var(--invert-ink);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  left: 50%;
+  min-height: 38px;
+  padding: 0 var(--sp-4);
+  position: fixed;
+  translate: -50% 0;
+  z-index: 900;
+}
+
+/* ---------------------------------------------------------------------------
+   Narrow screens — the planner and its timeline on a phone
+--------------------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  /* Planning needs more sheet than browsing does. */
+
+
+  /* The route search duplicates the planner's own fields here. */
+  body.has-journey .search {
+    display: none;
+  }
+
+  body.has-journey .brand {
+    padding-bottom: var(--sp-3);
+  }
+
+  /* Cap the inputs and let them scroll internally; the timeline then takes
+     everything left over without either half forcing the sheet to overflow. */
+  /* (Superseded below: with the rail as the one scroller, the planner no
+     longer needs its own cap and scrollbar.) */
+
+  body.has-journey .journey {
+    flex: none;
+  }
+
+  /* The chooser is a picker, not the content — one card's worth, scrollable.
+     Everything else goes to the timeline, which is what you actually read. */
+  body.has-journey .jp-output {
+    flex: none;
+    max-height: 104px;
+  }
+
+  /* With a journey planned the panel used to be three separate boxes: the
+     planner capped at 42dvh with its own scroll, the chooser capped at 104px,
+     and the steps squeezed into whatever remained — about 10dvh at half sheet,
+     a peephole onto the content you actually read. One scroll for the whole
+     sheet instead: the RAIL scrolls, the grip stays sticky so the sheet can
+     still be dragged, and every inner box sizes to its content. The chooser
+     keeps its one-card cap — it is a picker, not the content. */
+  body.has-journey .rail {
+    -webkit-overflow-scrolling: touch;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  body.has-journey .sheet-handle {
+    background: var(--glass-raised);
+    position: sticky;
+    top: 0;
+    z-index: 6;
+  }
+
+  body.has-journey .discover {
+    flex: none;
+    max-height: none;
+    overflow: visible;
+  }
+
+  body.has-journey #journeyView {
+    overflow: visible;
+  }
+
+  body.has-journey .detail {
+    border-top: 1px solid var(--rule);
+    flex: none;
+    min-height: auto;
+  }
+
+  body.has-journey .detail-body {
+    overflow: visible;
+  }
+
+  body.has-journey .detail-head {
+    padding-top: var(--sp-3);
+  }
+
+
+
+  /* On a phone the route list would push the planner off screen entirely. */
+  body.has-journey .list-head,
+  body.has-journey .routes,
+  body.has-journey .rail-foot,
+  body.has-journey #routesView {
+    display: none;
+  }
+
+  .update-prompt {
+    bottom: auto;
+    top: calc(68px + var(--safe-top));
+  }
+}
+
+/* Very narrow: the time gutter costs more than it gives. */
+@media (max-width: 420px) {
+  .tl-row {
+    gap: 0 9px;
+    grid-template-columns: 36px 14px minmax(0, 1fr);
+  }
+
+  .tl-time {
+    font-size: 11.5px;
+  }
+
+  .tl-body {
+    font-size: 13px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Journey tracking — progress down the timeline
+--------------------------------------------------------------------------- */
+
+/* Behind you: dimmed, so your eye lands on where you are. */
+.tracking .tl-row.done .tl-time,
+.tracking .tl-row.done .tl-stop,
+.tracking .tl-row.done .tl-body {
+  opacity: 0.4;
+}
+
+.tracking .tl-row.done .tl-node {
+  background: var(--ink-3);
+  border-color: var(--ink-3);
+}
+
+/* Where you are now. */
+.tracking .tl-row.current {
+  background: var(--selected);
+  border-radius: var(--r-badge);
+}
+
+.tracking .tl-row.current .tl-stop {
+  font-weight: 600;
+}
+
+.tracking .tl-row.current .tl-node {
+  box-shadow: 0 0 0 4px var(--selected);
+}
+
+/* The live "180 m left" counter, only on the current step. */
+.tl-left {
+  color: var(--ink);
+  display: inline-block;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin-top: 3px;
+}
+
+.tl-left[hidden] {
+  display: none;
+}
+
+/* A live journey earns the green dot, same as live vehicles. */
+.tracking .live-dot {
+  background: var(--live);
+}
+
+/* ---------------------------------------------------------------------------
+   Phone layout, properly
+   ---------------------------------------------------------------------------
+   On a desktop the route header, stats and tabs are pinned and only the list
+   scrolls, which works because there is height to spare. On a 360x812 phone
+   that pinned block is taller than the sheet, leaving the list a sliver that
+   cannot usefully scroll. So on narrow screens the whole panel becomes one
+   scroll instead, with the tabs sticking to the top as you go.
+--------------------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  /* One scroll for the whole panel. */
+  .detail-body {
+    -webkit-overflow-scrolling: touch;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .detail-fixed {
+    flex: none;
+  }
+
+  /* The inner scroller stops being a scroller; its parent owns it now. */
+  .detail-scroll {
+    flex: none;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  /* Tabs stay reachable while the list scrolls past them. */
+  .tabs {
+    background: var(--glass-raised);
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    /* Bleed to the panel edges so nothing shows through behind it. */
+    margin: 14px 0 0;
+    padding: 3px var(--sp-5);
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+  }
+
+  .list-title {
+    background: var(--glass-raised);
+    position: sticky;
+    top: 44px;
+    z-index: 2;
+  }
+
+  /* Sheet gets more room; the map keeps a usable strip. */
+
+
+
+
+  /* Touch targets: 44px is the floor on a phone. */
+  .icon-btn,
+  .icon-btn.small,
+  #closeDetails,
+  #refreshButton,
+  #legendToggle {
+    height: 44px;
+    width: 44px;
+  }
+
+  .tab {
+    height: 44px;
+  }
+
+  .pill,
+  .jp-edit {
+    min-height: 44px;
+  }
+
+  .chip {
+    height: 36px;
+    padding: 0 14px;
+  }
+
+  .chip-row.compact .chip {
+    height: 32px;
+    padding: 0 12px;
+  }
+
+  .map-btn {
+    height: 44px;
+    width: 44px;
+  }
+
+  .jp-row {
+    height: 48px;
+  }
+
+  .jp-go {
+    min-height: 48px;
+  }
+
+  .route-row {
+    padding: 14px 10px 14px var(--sp-2);
+  }
+
+  .stop-row {
+    min-height: 48px;
+  }
+
+  .arrival-row {
+    padding: 14px var(--sp-2);
+  }
+
+  /* Long Malaysian stop names should wrap, not vanish behind an ellipsis. */
+  .stop-name,
+  .tl-stop,
+  .arrival-stop,
+  .route-origin,
+  .route-dest {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .stop-row {
+    align-items: flex-start;
+    padding-top: 10px;
+  }
+
+  .stop-row .stop-node {
+    top: 22px;
+  }
+
+  /* The eta stays on its own line rather than squeezing the name. */
+  .stop-eta,
+  .arrival-eta {
+    align-self: center;
+  }
+}
+
+/* Very narrow phones: reclaim every pixel of width. */
+@media (max-width: 380px) {
+  .detail-head,
+  .stats,
+  .direction,
+  .list-title,
+  .detail-scroll,
+  .detail-top {
+    padding-left: var(--sp-4);
+    padding-right: var(--sp-4);
+  }
+
+  .tabs {
+    padding-left: var(--sp-4);
+    padding-right: var(--sp-4);
+  }
+
+  .stat-value {
+    font-size: 22px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Phone fixes found by measuring on-device
+--------------------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  /* The rail is a column here, so the discover pane must TAKE the sheet height
+     rather than size to its content. Left as flex:none it grew to 3711px and
+     the route list was simply clipped by the sheet — no scrolling at all. */
+  .discover {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  body.has-journey .discover {
+    flex: 0 0 auto;
+  }
+
+  /* The list used to be the scroller, which worked when almost nothing sat
+     above it. Saved, mode and recent chips now do, they are all pinned, and on
+     a half-open sheet they consumed the full height: the list was left a
+     ~10px sliver with a scrollbar — "cannot slide". So on phones the whole
+     routes view scrolls as one, the same treatment the detail pane already
+     got, and the chip blocks scroll away instead of squeezing the list. */
+  #routesView {
+    -webkit-overflow-scrolling: touch;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* The journey pane had the same squeeze: pinned From/To/Leave/button left
+     the results a sliver — plan a trip and "nothing happens" because the
+     answer rendered into 10 unscrollable pixels. One scroll here too. */
+  #journeyView {
+    -webkit-overflow-scrolling: touch;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .jp-output {
+    flex: none;
+    overflow: visible;
+  }
+
+  .routes {
+    flex: none;
+    overflow: visible;
+  }
+
+  /* With 44px controls the status bar no longer fits 360px, so the label gives
+     up its space instead of pushing the buttons off the edge. */
+  .status-bar {
+    gap: var(--sp-2);
+    padding: 0 6px 0 10px;
+  }
+
+  #liveText {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .status-bar .live-dot,
+  .status-bar .bar-rule,
+  .status-bar .pill,
+  .status-bar .icon-btn {
+    flex: none;
+  }
+
+  /* 40px controls in a 44px bar left 2px of air and read as swollen. 34px
+     keeps a comfortable thumb target while the bar gets its proportions back. */
+  .status-bar .icon-btn {
+    height: 34px;
+    width: 34px;
+  }
+
+  .status-bar .pill {
+    min-height: 34px;
+    padding: 0 10px;
+  }
+
+  /* Comfortable chips without wasting a row of height. */
+  .chip {
+    height: 40px;
+  }
+
+  .chip-row.compact .chip {
+    height: 36px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Phone: the search sheet opens full, since searching is the whole task
+--------------------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  /* Nothing selected yet: give the list the screen, keeping a strip of map. */
+
+
+
+
+  /* Four stats across still needs to breathe on a narrow screen. */
+  .stats {
+    gap: 6px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+
+  .stat-label {
+    font-size: 9.5px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Draggable bottom sheet (phones only)
+   ---------------------------------------------------------------------------
+   Half height by default so the map stays useful. Drag the grip to resize, or
+   tap it to cycle minimised -> half -> full. Minimised leaves the handle plus
+   the first row visible, which is the route identity or the search box.
+--------------------------------------------------------------------------- */
+
+.sheet-handle {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .sheet-handle {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    cursor: grab;
+    display: flex;
+    flex: none;
+    height: 26px;
+    justify-content: center;
+    padding: 0;
+    touch-action: none;
+    width: 100%;
+  }
+
+  .sheet-grip {
+    background: var(--ink-3);
+    border-radius: 999px;
+    height: 4px;
+    width: 44px;
+  }
+
+  .sheet-handle:active .sheet-grip {
+    background: var(--ink-2);
+  }
+
+
+
+  /* While dragging the finger owns the position; no easing. */
+  body.sheet-dragging .rail {
+    transition: none;
+  }
+
+
+
+  /* Minimised: keep the identity row, hide the rest so nothing half-shows. */
+  body.sheet-min .search,
+  body.sheet-min .block,
+  body.sheet-min .list-head,
+  body.sheet-min .routes,
+  body.sheet-min .rail-foot,
+  body.sheet-min .stats,
+  body.sheet-min .direction,
+  body.sheet-min .tabs,
+  body.sheet-min .list-title,
+  body.sheet-min .detail-scroll,
+  body.sheet-min .jp-field,
+  body.sheet-min .jp-go,
+  body.sheet-min .jp-output,
+  body.sheet-min .view-tabs {
+    display: none;
+  }
+
+  body.sheet-min .brand {
+    padding-bottom: var(--sp-3);
+  }
+
+  body.sheet-min .detail-head {
+    padding-bottom: var(--sp-3);
+  }
+
+
+}
+
+/* ---------------------------------------------------------------------------
+   Sheet position — the single source of truth
+   ---------------------------------------------------------------------------
+   Five separate rules used to set .rail's top on phones and they fought each
+   other; the winner then depended on file order, which is a trap. One block,
+   explicit values, keyed off the state class only.
+--------------------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  body.sheet-min .rail,
+  body.sheet-half .rail,
+  body.sheet-full .rail {
+    transition: top 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+
+  body.sheet-dragging .rail {
+    transition: none;
+  }
+
+  /* Minimised: identity row only, map almost entirely visible. */
+  body.sheet-min .rail {
+    top: 76dvh;
+  }
+
+  /* Half: the default. The map stays genuinely usable. */
+  body.sheet-half .rail {
+    top: 48dvh;
+  }
+
+  /* Full: for reading a long list, with a strip of map still showing. */
+  body.sheet-full .rail {
+    top: 10dvh;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Map controls on a phone — one rule, keyed off the sheet
+   ---------------------------------------------------------------------------
+   Six rules used to position these and the most specific one won regardless of
+   the sheet's actual height, which parked them on top of the status bar. They
+   now sit above whatever the sheet is doing, and step aside entirely when the
+   sheet is full — at 10dvh the visible map is shorter than the status bar, so
+   there is nowhere honest to put them. Pinch zoom still works.
+--------------------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  .map-controls {
+    right: calc(var(--sp-3) + var(--safe-right));
+  }
+
+  body.sheet-min .map-controls {
+    bottom: calc(24dvh + var(--sp-3));
+  }
+
+  body.sheet-half .map-controls {
+    bottom: calc(52dvh + var(--sp-3));
+  }
+
+  body.sheet-full .map-controls {
+    display: none;
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Dark mode" },
+    { "file": "Light.dc.html", "x": 1520, "y": 0, "w": 1440, "h": 900, "title": "Light mode" },
+    { "file": "Kit.dc.html", "x": 0, "y": 1000, "w": 1280, "h": 940, "title": "Monochrome glass kit" }
+  ],
+  "annotations": [
+    { "id": "brief", "x": 0, "y": -150, "w": 520, "text": "Monochrome glass redesign — no gradients, no decorative colour.\nThe only accent left is the map route line (routeAccent tweak, default #006CFF, the route's real GTFS colour).\nGreen appears once, as the 6px live-status dot." },
+    { "id": "direction-note", "x": 3040, "y": 0, "w": 300, "text": "Direction control: route 250 has two patterns, and the shipped timeline merges both — which is why its ETAs currently run 0,1,2,4…9 then fall back to 8,6,5. Swapping direction filters the timeline to one pattern." },
+    { "id": "kit-note", "x": 1360, "y": 1000, "w": 300, "text": "Tokens, component states and both palettes side by side — the sheet to build styles.css from." }
+  ],
+  "launch": { "view": "canvas" }
+}

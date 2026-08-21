@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEBUG BUILDS ONLY. This file lives under src/debug, so release builds never
+  see it and keep Android's default refusal of cleartext traffic.
+
+  It exists so the app can talk to a dev API on the local network during
+  testing. Production must use HTTPS: put the real origin in
+  RAPIDBUS_API_BASE and this exception plays no part.
+-->
+<network-security-config>
+  <domain-config cleartextTrafficPermitted="true">
+    <!-- Dev machine on the LAN -->
+    <domain includeSubdomains="false">192.168.100.8</domain>
+    <!-- Loopback, and the host as seen from an emulator -->
+    <domain includeSubdomains="false">localhost</domain>
+    <domain includeSubdomains="false">10.0.2.2</domain>
+  </domain-config>
+</network-security-config>

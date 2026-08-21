@@ -1,0 +1,618 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: inherit; text-decoration: none; }
+    a:hover { opacity: 0.7; }
+
+    /* One palette per mode. Only colours and glass opacity change between
+       them — never a measurement, so both modes share an identical layout. */
+    [data-theme="dark"] {
+      --page: #050505;
+      --page-2: #080808;
+      --glass: rgba(18, 18, 18, 0.72);
+      --glass-raised: rgba(28, 28, 28, 0.76);
+      --edge: rgba(255, 255, 255, 0.08);
+      --edge-strong: rgba(255, 255, 255, 0.25);
+      --ink: #ffffff;
+      --ink-2: rgba(255, 255, 255, 0.65);
+      --ink-3: rgba(255, 255, 255, 0.40);
+      --rule: rgba(255, 255, 255, 0.08);
+      --hover: rgba(255, 255, 255, 0.06);
+      --selected: rgba(255, 255, 255, 0.10);
+      --invert-bg: #ffffff;
+      --invert-ink: #090909;
+      --shadow: 0 24px 64px rgba(0, 0, 0, 0.62);
+      --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.5);
+      --land: #0d0d0d;
+      --land-2: #131313;
+      --road: #232323;
+      --road-minor: #1a1a1a;
+      --water: #0a1418;
+      --marker-face: #ffffff;
+      --marker-ink: #090909;
+    }
+    [data-theme="light"] {
+      --page: #f5f5f5;
+      --page-2: #fafafa;
+      --glass: rgba(255, 255, 255, 0.72);
+      --glass-raised: rgba(255, 255, 255, 0.88);
+      --edge: rgba(0, 0, 0, 0.07);
+      --edge-strong: rgba(0, 0, 0, 0.22);
+      --ink: #090909;
+      --ink-2: rgba(0, 0, 0, 0.62);
+      --ink-3: rgba(0, 0, 0, 0.40);
+      --rule: rgba(0, 0, 0, 0.07);
+      --hover: rgba(0, 0, 0, 0.04);
+      --selected: rgba(0, 0, 0, 0.07);
+      --invert-bg: #090909;
+      --invert-ink: #ffffff;
+      --shadow: 0 24px 64px rgba(0, 0, 0, 0.14);
+      --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.10);
+      --land: #ededed;
+      --land-2: #e5e5e5;
+      --road: #ffffff;
+      --road-minor: #f4f4f4;
+      --water: #dfe7ea;
+      --marker-face: #ffffff;
+      --marker-ink: #090909;
+    }
+
+    .rb { font-family: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; }
+    .rb * { box-sizing: border-box; }
+    .num { font-variant-numeric: tabular-nums; }
+    .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Scrollbars stay out of the way — the glass edge is the affordance. */
+    .rb-scroll { overflow-y: auto; scrollbar-width: thin; }
+    .rb-scroll::-webkit-scrollbar { width: 6px; }
+    .rb-scroll::-webkit-scrollbar-thumb { background: var(--ink-3); border-radius: 999px; }
+    .rb-scroll::-webkit-scrollbar-track { background: transparent; }
+
+    /* Hover lives in CSS so it survives direct-manipulation edits. */
+    .rb-row:hover { background: var(--hover); }
+    .rb-chip:hover { border-color: var(--edge-strong); }
+    .rb-ctl:hover { background: var(--glass-raised); }
+    .rb-stop:hover .rb-stop-name { color: var(--ink); }
+  </style>
+</helmet>
+
+<div class="rb" data-theme="{{ theme }}" style="position: relative; width: 1440px; height: 900px; background: var(--page); color: var(--ink); overflow: hidden;">
+
+  <!-- ============ MAP (full bleed, visually dominant) ============ -->
+  <div style="position: absolute; inset: 0; background: var(--land);">
+    <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block;">
+      <rect x="0" y="0" width="1440" height="900" fill="var(--land)"></rect>
+      <path d="M0 640 L250 596 L470 660 L470 900 L0 900 Z" fill="var(--water)" opacity="0.9"></path>
+      <path d="M1180 0 L1440 0 L1440 190 L1240 150 Z" fill="var(--land-2)"></path>
+      <path d="M690 200 L900 240 L860 380 L660 330 Z" fill="var(--land-2)"></path>
+      <g stroke="var(--road-minor)" stroke-width="2" fill="none">
+        <path d="M-20 200 L1460 120"></path>
+        <path d="M-20 380 L1460 300"></path>
+        <path d="M-20 560 L1460 470"></path>
+        <path d="M-20 760 L1460 660"></path>
+        <path d="M180 -20 L120 920"></path>
+        <path d="M420 -20 L390 920"></path>
+        <path d="M700 -20 L690 920"></path>
+        <path d="M980 -20 L1010 920"></path>
+        <path d="M1240 -20 L1300 920"></path>
+      </g>
+      <g stroke="var(--road)" stroke-width="5" fill="none" stroke-linecap="round">
+        <path d="M-20 470 L1460 380"></path>
+        <path d="M560 -20 L530 920"></path>
+        <path d="M-20 810 L900 740 L1460 790"></path>
+      </g>
+      <!-- Route casing keeps the line legible over any basemap tone. -->
+      <path d="{{ routePath }}" fill="none" stroke="var(--page)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"></path>
+      <path d="{{ routePath }}" fill="none" stroke="{{ accent }}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"></path>
+      <g>
+        <sc-for list="{{ mapStops }}" as="pt" hint-placeholder-count="10">
+          <circle cx="{{ pt.x }}" cy="{{ pt.y }}" r="4.5" fill="var(--marker-face)" stroke="{{ accent }}" stroke-width="2.5"></circle>
+        </sc-for>
+      </g>
+    </svg>
+
+    <!-- Live buses: white disc, black glyph, thin outline, glass plate below. -->
+    <sc-for list="{{ buses }}" as="bus" hint-placeholder-count="2">
+      <div style="position: absolute; left: {{ bus.left }}; top: {{ bus.top }}; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 4px;">
+        <div style="width: 34px; height: 34px; border-radius: 999px; background: var(--marker-face); border: 1px solid rgba(0,0,0,0.55); box-shadow: 0 6px 18px rgba(0,0,0,0.45); display: grid; place-items: center;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 4h12a2.5 2.5 0 0 1 2.5 2.5v9a2.5 2.5 0 0 1-1.4 2.25v1.6a1.3 1.3 0 0 1-2.6 0v-1.1H7.5v1.1a1.3 1.3 0 0 1-2.6 0v-1.6A2.5 2.5 0 0 1 3.5 15.5v-9A2.5 2.5 0 0 1 6 4Z" fill="var(--marker-ink)"></path>
+            <rect x="5.6" y="6.4" width="12.8" height="4.9" rx="1" fill="var(--marker-face)"></rect>
+            <circle cx="7.9" cy="14.4" r="1.15" fill="var(--marker-face)"></circle>
+            <circle cx="16.1" cy="14.4" r="1.15" fill="var(--marker-face)"></circle>
+          </svg>
+        </div>
+        <div class="num" style="padding: 2px 7px; border-radius: 6px; background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid var(--edge); color: var(--ink); font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em; box-shadow: var(--shadow-sm);">{{ bus.label }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <!-- ============ FLOATING LIVE STATUS ============ -->
+  <div style="position: absolute; top: 20px; right: 20px; display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 6px 0 14px; border-radius: 12px; background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--edge); box-shadow: var(--shadow);">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="width: 6px; height: 6px; border-radius: 999px; background: #30d158; flex: none;"></span>
+      <span class="num" style="font-size: 12.5px; font-weight: 500; color: var(--ink); white-space: nowrap;">{{ liveLabel }}</span>
+      <span style="font-size: 12.5px; color: var(--ink-3);">·</span>
+      <span class="num" style="font-size: 12.5px; color: var(--ink-2); white-space: nowrap;">{{ updatedLabel }}</span>
+    </div>
+    <span style="width: 1px; height: 20px; background: var(--rule); flex: none;"></span>
+    <button type="button" onClick="{{ toggleFollow }}" style="height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid {{ followBorder }}; background: {{ followBg }}; color: {{ followInk }}; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap;">{{ followLabel }}</button>
+    <button type="button" class="rb-ctl" style="width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--edge); background: transparent; color: var(--ink-2); display: grid; place-items: center; cursor: pointer;" aria-label="Refresh now">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></path>
+        <path d="M20 3.4v4h-4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>
+    </button>
+  </div>
+
+  <!-- ============ MAP CONTROLS ============ -->
+  <div style="position: absolute; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 8px;">
+    <button type="button" class="rb-ctl" style="width: 40px; height: 40px; border-radius: 12px; background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--edge); color: var(--ink); display: grid; place-items: center; cursor: pointer; box-shadow: var(--shadow-sm);" aria-label="Show my location">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
+        <circle cx="12" cy="12" r="6.8" stroke="currentColor" stroke-width="1.6"></circle>
+        <path d="M12 2.6v3M12 18.4v3M2.6 12h3M18.4 12h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+      </svg>
+    </button>
+    <div style="display: flex; flex-direction: column; border-radius: 12px; overflow: hidden; background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--edge); box-shadow: var(--shadow-sm);">
+      <button type="button" class="rb-ctl" style="width: 40px; height: 40px; border: 0; background: transparent; color: var(--ink); display: grid; place-items: center; cursor: pointer;" aria-label="Zoom in">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
+      </button>
+      <span style="height: 1px; background: var(--rule);"></span>
+      <button type="button" class="rb-ctl" style="width: 40px; height: 40px; border: 0; background: transparent; color: var(--ink); display: grid; place-items: center; cursor: pointer;" aria-label="Zoom out">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ============ GLASS RAIL: discovery + selected route ============ -->
+  <div style="position: absolute; left: 16px; top: 16px; bottom: 16px; width: 648px; display: flex; border-radius: 16px; background: var(--glass); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); border: 1px solid var(--edge); box-shadow: var(--shadow); overflow: hidden;">
+
+    <!-- ---------- Route discovery ---------- -->
+    <div style="width: 304px; flex: none; display: flex; flex-direction: column; min-height: 0; padding: 20px 0 0;">
+
+      <div style="display: flex; align-items: flex-start; gap: 12px; padding: 0 20px 20px;">
+        <div style="width: 34px; height: 34px; flex: none; border-radius: 8px; background: var(--invert-bg); display: grid; place-items: center;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 4h12a2.5 2.5 0 0 1 2.5 2.5v9a2.5 2.5 0 0 1-1.4 2.25v1.6a1.3 1.3 0 0 1-2.6 0v-1.1H7.5v1.1a1.3 1.3 0 0 1-2.6 0v-1.6A2.5 2.5 0 0 1 3.5 15.5v-9A2.5 2.5 0 0 1 6 4Z" fill="var(--invert-ink)"></path>
+            <rect x="5.6" y="6.4" width="12.8" height="4.9" rx="1" fill="var(--invert-bg)"></rect>
+            <circle cx="7.9" cy="14.4" r="1.15" fill="var(--invert-bg)"></circle>
+            <circle cx="16.1" cy="14.4" r="1.15" fill="var(--invert-bg)"></circle>
+          </svg>
+        </div>
+        <div style="flex-grow: 1; min-width: 0;">
+          <div style="font-size: 21px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.2; color: var(--ink);">Rapid Bus Live</div>
+          <div style="margin-top: 5px; font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3);">Prasarana · GTFS Realtime</div>
+        </div>
+        <button type="button" onClick="{{ toggleTheme }}" style="width: 30px; height: 30px; flex: none; border-radius: 8px; border: 1px solid var(--edge); background: transparent; color: var(--ink-2); display: grid; place-items: center; cursor: pointer;" aria-label="Switch colour mode">
+          <sc-if value="{{ isDark }}" hint-placeholder-val="{{ true }}">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path>
+            </svg>
+          </sc-if>
+          <sc-if value="{{ isLight }}" hint-placeholder-val="{{ false }}">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.7"></circle>
+              <path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>
+            </svg>
+          </sc-if>
+        </button>
+      </div>
+
+      <div style="padding: 0 20px 16px;">
+        <div style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; border-radius: 12px; background: var(--glass-raised); border: 1px solid {{ searchBorder }};">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" style="flex: none; color: var(--ink-3);" aria-hidden="true">
+            <circle cx="6.9" cy="6.9" r="4.4" stroke="currentColor" stroke-width="1.6"></circle>
+            <path d="m10.4 10.4 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+          </svg>
+          <input type="text" value="{{ query }}" onChange="{{ onQuery }}" onFocus="{{ onFocus }}" onBlur="{{ onBlur }}" placeholder="Search route or place" style="flex-grow: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--ink); font-family: inherit; font-size: 13.5px; font-weight: 500;">
+          <span class="num" style="flex: none; padding: 2px 6px; border-radius: 5px; border: 1px solid var(--edge); color: var(--ink-3); font-size: 10.5px; font-weight: 600;">/</span>
+        </div>
+      </div>
+
+      <div style="padding: 0 20px 18px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3);">Quick routes</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          <sc-for list="{{ quickRoutes }}" as="chip" hint-placeholder-count="4">
+            <button type="button" class="rb-chip" onClick="{{ chip.pick }}" style="height: 28px; padding: 0 11px; border-radius: 8px; border: 1px solid {{ chip.border }}; background: {{ chip.bg }}; color: {{ chip.ink }}; font-family: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.01em; cursor: pointer;">{{ chip.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="padding: 0 20px 18px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3);">Recent</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+          <sc-for list="{{ recents }}" as="chip" hint-placeholder-count="5">
+            <button type="button" class="rb-chip" onClick="{{ chip.pick }}" style="height: 24px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--edge); background: transparent; color: var(--ink-2); font-family: inherit; font-size: 11.5px; font-weight: 500; cursor: pointer;">{{ chip.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 0 20px 8px;">
+        <span style="font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3);">Routes</span>
+        <span class="num" style="font-size: 11.5px; font-weight: 500; color: var(--ink-3);">{{ routeCount }}</span>
+      </div>
+
+      <div class="rb-scroll" style="flex-grow: 1; min-height: 0; padding: 0 12px 16px;">
+        <sc-for list="{{ routes }}" as="route" hint-placeholder-count="6">
+          <button type="button" class="rb-row" onClick="{{ route.pick }}" style="position: relative; display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 12px 10px 12px 8px; border: 0; border-top: 1px solid {{ route.rule }}; border-radius: 10px; background: {{ route.bg }}; color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;">
+            <span style="position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 2px; height: {{ route.markHeight }}; border-radius: 999px; background: var(--ink);"></span>
+            <span class="num" style="flex: none; min-width: 40px; height: 26px; padding: 0 7px; border-radius: 8px; background: var(--invert-bg); color: var(--invert-ink); font-size: 12.5px; font-weight: 600; display: grid; place-items: center;">{{ route.code }}</span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px;">
+              <span class="clip" style="font-size: 14px; font-weight: 500; color: var(--ink); line-height: 1.35;">{{ route.origin }}</span>
+              <sc-if value="{{ route.hasDestination }}" hint-placeholder-val="{{ true }}">
+                <span class="clip" style="font-size: 14px; font-weight: 500; color: var(--ink-2); line-height: 1.35;">{{ route.destination }}</span>
+              </sc-if>
+              <span class="clip num" style="margin-top: 2px; font-size: 11px; color: var(--ink-3);">{{ route.meta }}</span>
+            </span>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="flex: none; margin-top: 6px; color: var(--ink-3);" aria-hidden="true">
+              <path d="m6 3.5 4.3 4.5L6 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </button>
+        </sc-for>
+        <sc-if value="{{ noMatches }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 28px 10px; text-align: center; color: var(--ink-3); font-size: 12.5px; line-height: 1.6;">
+            <div style="color: var(--ink-2); font-size: 13.5px; font-weight: 500; margin-bottom: 4px;">No route matches</div>
+            Try a number like 250 or T117, or a place such as Wangsa Maju.
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="padding: 12px 20px 14px; border-top: 1px solid var(--rule); font-size: 10.5px; color: var(--ink-3); text-align: center;">Malaysia Open API · Prasarana · © OpenStreetMap</div>
+    </div>
+
+    <span style="width: 1px; flex: none; background: var(--rule);"></span>
+
+    <!-- ---------- Selected route ---------- -->
+    <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: var(--glass-raised);">
+
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 0;">
+        <span style="font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3);">Selected route</span>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-2);">
+            <span style="width: 6px; height: 6px; border-radius: 999px; background: #30d158;"></span>Live
+          </span>
+          <button type="button" style="width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--edge); background: transparent; color: var(--ink-2); display: grid; place-items: center; cursor: pointer;" aria-label="Close route details">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <div style="padding: 18px 20px 0; display: flex; flex-direction: column; gap: 12px;">
+        <span class="num" style="align-self: flex-start; min-width: 46px; height: 34px; padding: 0 10px; border-radius: 8px; background: var(--invert-bg); color: var(--invert-ink); font-size: 17px; font-weight: 600; display: grid; place-items: center;">{{ selected.code }}</span>
+        <div>
+          <div style="font-size: 17.5px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.32; color: var(--ink);">{{ selected.origin }}</div>
+          <sc-if value="{{ selected.hasDestination }}" hint-placeholder-val="{{ true }}">
+            <div style="font-size: 17.5px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.32; color: var(--ink-2);">{{ selected.destination }}</div>
+          </sc-if>
+        </div>
+        <div class="num" style="font-size: 11.5px; color: var(--ink-3);">{{ selected.meta }}</div>
+      </div>
+
+      <!-- Statistics: typography and rules, not four cards. -->
+      <div style="margin: 20px 20px 0; padding: 16px 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 16px;">
+        <sc-for list="{{ stats }}" as="stat" hint-placeholder-count="4">
+          <div style="display: flex; flex-direction: column; gap: 3px;">
+            <span class="num" style="font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; color: {{ stat.ink }};">{{ stat.value }}</span>
+            <span style="font-size: 11px; font-weight: 500; color: var(--ink-3);">{{ stat.label }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- Direction: route 250 has two patterns; the old UI merged both. -->
+      <button type="button" class="rb-row" onClick="{{ swapDirection }}" style="display: flex; align-items: center; gap: 10px; margin: 16px 20px 0; padding: 10px 12px; border: 1px solid var(--edge); border-radius: 10px; background: transparent; color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;">
+        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 10px; font-weight: 600; letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-3);">Direction</span>
+          <span class="clip" style="font-size: 13px; font-weight: 500; color: var(--ink);">{{ headsign }}</span>
+        </span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex: none; color: var(--ink-2);" aria-hidden="true">
+          <path d="M7 4v16m0 0-3.2-3.4M7 20l3.2-3.4M17 20V4m0 0-3.2 3.4M17 4l3.2 3.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+      </button>
+
+      <!-- Segmented control -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 14px 20px 0; padding: 3px; border-radius: 10px; border: 1px solid var(--edge); background: transparent;">
+        <sc-for list="{{ tabs }}" as="tab" hint-placeholder-count="2">
+          <button type="button" onClick="{{ tab.pick }}" style="display: flex; align-items: center; justify-content: center; gap: 6px; height: 32px; border: 0; border-radius: 8px; background: {{ tab.bg }}; color: {{ tab.ink }}; font-family: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;">
+            <span>{{ tab.label }}</span>
+            <sc-if value="{{ tab.hasCount }}" hint-placeholder-val="{{ true }}">
+              <span class="num" style="font-size: 11px; color: {{ tab.countInk }};">{{ tab.count }}</span>
+            </sc-if>
+          </button>
+        </sc-for>
+      </div>
+
+      <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 16px 20px 10px;">
+        <span style="font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3);">{{ listTitle }}</span>
+        <span style="font-size: 11px; color: var(--ink-3);">{{ listHint }}</span>
+      </div>
+
+      <!-- Only this list scrolls: header, stats, direction and tabs stay put. -->
+      <div class="rb-scroll" style="flex-grow: 1; min-height: 0; padding: 0 20px 20px;">
+
+        <sc-if value="{{ showStops }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-direction: column;">
+            <sc-for list="{{ stops }}" as="stop" hint-placeholder-count="12">
+              <button type="button" class="rb-row rb-stop" onClick="{{ stop.pick }}" style="position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 42px; padding: 8px 8px 8px 26px; border: 0; border-radius: 8px; background: {{ stop.bg }}; font-family: inherit; text-align: left; cursor: pointer;">
+                <span style="position: absolute; left: 8px; top: {{ stop.lineTop }}; bottom: {{ stop.lineBottom }}; width: 1px; background: var(--edge-strong); opacity: 0.55;"></span>
+                <span style="position: absolute; left: 4.5px; top: 50%; transform: translateY(-50%); width: 9px; height: 9px; border-radius: 999px; background: {{ stop.nodeFill }}; border: 1.5px solid {{ stop.nodeEdge }};"></span>
+                <span class="clip rb-stop-name" style="flex-grow: 1; min-width: 0; font-size: 13px; font-weight: {{ stop.weight }}; color: {{ stop.nameInk }};">{{ stop.name }}</span>
+                <sc-if value="{{ stop.hasBus }}" hint-placeholder-val="{{ false }}">
+                  <span class="num" style="flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 6px; background: var(--selected); color: var(--ink); font-size: 10.5px; font-weight: 600;">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 3h12a3 3 0 0 1 3 3v10a3 3 0 0 1-1.5 2.6v1.9a1.5 1.5 0 0 1-3 0V19h-9v1.5a1.5 1.5 0 0 1-3 0v-1.9A3 3 0 0 1 3 16V6a3 3 0 0 1 3-3Zm-.5 4v5h13V7h-13Z"></path></svg>
+                    {{ stop.busLabel }}
+                  </span>
+                </sc-if>
+                <span class="num" style="flex: none; font-size: 12px; font-weight: 500; color: {{ stop.etaInk }}; white-space: nowrap;">{{ stop.eta }}</span>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showArrivals }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <sc-for list="{{ arrivals }}" as="row" hint-placeholder-count="6">
+              <button type="button" class="rb-row" onClick="{{ row.pick }}" style="display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 8px; border: 0; border-top: 1px solid var(--rule); border-radius: 8px; background: transparent; font-family: inherit; text-align: left; cursor: pointer;">
+                <span class="num" style="flex: none; min-width: 34px; height: 24px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--edge); background: transparent; color: var(--ink-2); font-size: 11px; font-weight: 600; display: grid; place-items: center;">{{ row.bus }}</span>
+                <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+                  <span class="clip" style="font-size: 13px; font-weight: 500; color: var(--ink);">{{ row.stop }}</span>
+                  <span class="clip num" style="font-size: 11px; color: var(--ink-3);">{{ row.meta }}</span>
+                </span>
+                <span class="num" style="flex: none; font-size: 13px; font-weight: 600; color: {{ row.etaInk }}; white-space: nowrap;">{{ row.eta }}</span>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Appearance"},"routeAccent":{"editor":"color","default":"#006CFF","options":["#006CFF","#FF6B00","#12B981","#8B5CF6"],"section":"Appearance"},"liveBuses":{"editor":"int","default":2,"min":0,"max":6,"section":"Live data"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  /* Real route 250 (U2500) data from the Prasarana GTFS feed: 41 stops, two
+     patterns, live ETAs as returned by /api/rapid-bus/rapid-bus-kl/map. */
+  stopData() {
+    return [
+      ['KL117 BSN LEBUH AMPANG', 0], ['KL30 AMANAHRAYA', 1],
+      ['KL31 HENTIAN MUNSHI ABDULLAH', 2], ['KL32 CAPSQUARE', 3],
+      ['KL1940 SOGO KL', 3], ['KL40 MEDAN MARA', 4],
+      ['SKPK LELAKI JLN BATU', 5], ['KL41 LRT SULTAN ISMAIL/WISMA SIME DARBY', 6],
+      ['KL42 EDC HOTEL', 7], ['KL46 CHOWKIT/KFC (BARAT)', 7],
+      ['KL52 MONORAIL CHOWKIT', 8], ['KL53 GRAND SEASONS HOTEL', 9],
+      ['KL54 HKL (OPP)', 10], ['KL668 HOSPITAL TAWAKAL', 11],
+      ['KL670 TITIWANGSA (BARAT)', 12], ['KL671 SJK(C) CHONG HWA', 13],
+      ['KL673 GUAN YING TING', 14], ['KL674 COURTS MEGASTORE SETAPAK', 15],
+      ['KL675 TAMAN P.RAMLEE', 16], ['KL676 KFC GENTING KLANG', 17],
+      ['KL677 SRI PELANGI CONDOMINIUM (SELATAN)', 18], ['KL678 SRI PELANGI CONDOMINIUM', 18],
+      ['KL679 PV128 SETAPAK', 19], ['KL1598 COLUMBIA HOSPITAL', 20],
+      ['KL680 SETAPAK SENTRAL (SELATAN)', 21], ['KL681 STARPARC POINT', 22],
+      ['KL682 KEM WARDIEBURN', 23], ['UTAR PINTU 2', 25],
+      ['KL162 UTAR MAIN GATE', 26], ['UTAR PINTU 4', 27],
+      ['KL2101 SURAU TAMAN BUNGA RAYA', 28], ['KL169 TAR VILLA', 29],
+      ['KL170 LRT WANGSA MAJU', 30], ['KL172 FLAT BLOK G9', 31],
+      ['KL173 PUSAT PENJAJA SEKSYEN 2', 32], ['KL174 BLOK E10 (OPP)', 33],
+      ['KL175 BLOK C14', 34], ['KL176 HOSPITAL TENTERA TUANKU MIZAN', 35],
+      ['KL177 BLOK A5', 36], ['KL178 BLOK 5', 37],
+      ['KL192 LRT WANGSA MAJU', 38]
+    ];
+  }
+
+  routeData() {
+    return [
+      ['250', 'Stesen LRT Wangsa Maju', 'Lebuh Ampang', 'U2500', 'Rapid Bus KL'],
+      ['SUNWAY', 'BRT USJ 7', 'BRT Setia Jaya', 'B1000', 'Rapid Bus KL'],
+      ['300', 'Terminal Maluri', 'Lebuh Ampang', 'U3000', 'Rapid Bus KL'],
+      ['303', 'Taman Mulia Jaya', 'Lebuh Ampang', 'U3030', 'Rapid Bus KL'],
+      ['400', 'Damai Perdana', 'Hab Pasar Seni via Bukit Bintang', 'U4000', 'Rapid Bus KL'],
+      ['420', 'Hentian Taman Dagang', 'Menara Maybank via Bukit Bintang', 'U4200', 'Rapid Bus KL'],
+      ['T117', 'MRT Feeder route T117', '', '30000143', 'MRT Feeder'],
+      ['401', 'Rapid Penang route 401', '', '30000019', 'Rapid Penang']
+    ];
+  }
+
+  theme() { return this.state.theme ?? this.props.theme ?? 'dark'; }
+  tab() { return this.state.tab ?? 'stops'; }
+  direction() { return this.state.direction ?? 0; }
+  activeCode() { return this.state.activeCode ?? '250'; }
+
+  renderVals() {
+    const dark = this.theme() === 'dark';
+    const accent = this.props.routeAccent ?? '#006CFF';
+    const busCount = Math.max(0, Math.min(6, this.props.liveBuses ?? 2));
+    const query = this.state.query ?? '';
+    const focused = this.state.focused ?? false;
+    const tab = this.tab();
+    const activeCode = this.activeCode();
+    const selectedStop = this.state.selectedStop ?? 1;
+
+    const invertBg = dark ? '#ffffff' : '#090909';
+    const invertInk = dark ? '#090909' : '#ffffff';
+
+    // Direction 0 runs Lebuh Ampang → Wangsa Maju; direction 1 is the reverse
+    // pattern, which the old single-list timeline folded into the same rows.
+    const base = this.stopData();
+    const names = base.map((entry) => entry[0]);
+    const ramp = base.map((entry) => entry[1]);
+    // Reversing direction reverses the stop ORDER only — the countdown always
+    // climbs away from wherever the bus is, so ETA follows position, not stop.
+    const ordered = this.direction() === 0 ? names : names.slice().reverse();
+    const busStopIndex = 1;
+
+    const stops = ordered.map((name, index) => {
+      const isSelected = index === selectedStop;
+      const minutes = ramp[index];
+      const hasBus = busCount > 0 && index === busStopIndex;
+      return {
+        name: name,
+        eta: minutes <= 1 ? 'Arriving' : minutes + ' min',
+        etaInk: minutes <= 1 ? 'var(--ink)' : 'var(--ink-2)',
+        nameInk: isSelected ? 'var(--ink)' : 'var(--ink-2)',
+        weight: isSelected ? '600' : '500',
+        bg: isSelected ? 'var(--selected)' : 'transparent',
+        nodeFill: isSelected ? 'var(--ink)' : 'transparent',
+        nodeEdge: isSelected ? 'var(--ink)' : 'var(--ink-3)',
+        lineTop: index === 0 ? '50%' : '0px',
+        lineBottom: index === ordered.length - 1 ? '50%' : '0px',
+        hasBus: hasBus,
+        busLabel: '426',
+        pick: () => this.setState({ selectedStop: index })
+      };
+    });
+
+    const arrivals = ordered.slice(0, 7).map((name, index) => ({
+      bus: index % 2 === 0 ? '426' : '423',
+      stop: name,
+      meta: (index % 2 === 0 ? '1.2 km away' : '2.6 km away') + ' · 18 km/h · seen 12s ago',
+      eta: ramp[index] <= 1 ? 'Arriving' : ramp[index] + ' min',
+      etaInk: ramp[index] <= 1 ? 'var(--ink)' : 'var(--ink-2)',
+      pick: () => this.setState({ selectedStop: index })
+    }));
+
+    const all = this.routeData();
+    const active = all.find((route) => route[0] === activeCode) ?? all[0];
+
+    const needle = query.trim().toLowerCase();
+    const matched = all.filter((route) => {
+      if (!needle) return true;
+      return (route[0] + ' ' + route[1] + ' ' + route[2] + ' ' + route[3]).toLowerCase().includes(needle);
+    });
+
+    const routes = matched.map((route) => {
+      const isActive = route[0] === activeCode;
+      return {
+        code: route[0],
+        origin: route[1],
+        destination: '→ ' + route[2],
+        hasDestination: route[2] !== '',
+        meta: route[4] + ' · ' + route[3],
+        bg: isActive ? 'var(--selected)' : 'transparent',
+        rule: isActive ? 'transparent' : 'var(--rule)',
+        markHeight: isActive ? '26px' : '0px',
+        pick: () => this.setState({ activeCode: route[0], selectedStop: 1 })
+      };
+    });
+
+    const quickRoutes = ['250', '300', 'T117', '401'].map((code) => {
+      const on = code === activeCode;
+      return {
+        label: code,
+        bg: on ? invertBg : 'transparent',
+        ink: on ? invertInk : 'var(--ink-2)',
+        border: on ? 'transparent' : 'var(--edge)',
+        pick: () => this.setState({ activeCode: code })
+      };
+    });
+
+    const recents = ['250', '420', '400', 'SUNWAY', '300'].map((code) => ({
+      label: code,
+      pick: () => this.setState({ activeCode: code })
+    }));
+
+    const tabs = [
+      { key: 'arrivals', label: 'Arrivals', hasCount: false, count: '' },
+      { key: 'stops', label: 'Stops', hasCount: true, count: String(ordered.length) }
+    ].map((entry) => {
+      const on = entry.key === tab;
+      return {
+        label: entry.label,
+        hasCount: entry.hasCount,
+        count: entry.count,
+        bg: on ? invertBg : 'transparent',
+        ink: on ? invertInk : 'var(--ink-3)',
+        countInk: on ? invertInk : 'var(--ink-3)',
+        pick: () => this.setState({ tab: entry.key })
+      };
+    });
+
+    const follow = this.state.follow ?? true;
+
+    // Stop dots drawn along the map polyline.
+    const routePath = 'M 196 812 C 300 780 352 724 404 668 S 486 566 546 512 C 618 448 690 404 760 340 S 900 236 1004 190 L 1150 140';
+    const mapStops = [
+      [230, 795], [318, 758], [404, 668], [470, 592], [546, 512], [614, 452],
+      [690, 400], [760, 340], [846, 282], [936, 226], [1030, 182], [1150, 140]
+    ].map((point) => ({ x: point[0], y: point[1] }));
+
+    const buses = [
+      { label: '426', left: '30.2%', top: '76.8%' },
+      { label: '423', left: '52.6%', top: '46.4%' },
+      { label: '431', left: '71.4%', top: '25.6%' },
+      { label: '418', left: '18.4%', top: '88.2%' },
+      { label: '409', left: '62.0%', top: '35.0%' },
+      { label: '444', left: '44.0%', top: '56.0%' }
+    ].slice(0, busCount);
+
+    return {
+      theme: this.theme(),
+      isDark: dark,
+      isLight: !dark,
+      accent: accent,
+      query: query,
+      searchBorder: focused ? 'var(--edge-strong)' : 'var(--edge)',
+      onQuery: (event) => this.setState({ query: event.target.value }),
+      onFocus: () => this.setState({ focused: true }),
+      onBlur: () => this.setState({ focused: false }),
+      toggleTheme: () => this.setState({ theme: dark ? 'light' : 'dark' }),
+      swapDirection: () => this.setState({ direction: this.direction() === 0 ? 1 : 0, selectedStop: 1 }),
+      toggleFollow: () => this.setState({ follow: !follow }),
+
+      quickRoutes: quickRoutes,
+      recents: recents,
+      routes: routes,
+      routeCount: String(matched.length) + (needle ? '' : ' of 275'),
+      noMatches: routes.length === 0,
+
+      selected: {
+        code: active[0],
+        origin: active[1],
+        destination: '→ ' + active[2],
+        hasDestination: active[2] !== '',
+        meta: active[4] + ' · ' + active[3]
+      },
+      headsign: active[2] === ''
+        ? active[1]
+        : (this.direction() === 0 ? active[2] + ' → ' + active[1] : active[1] + ' → ' + active[2]),
+
+      stats: [
+        { value: String(ordered.length), label: 'Stops', ink: 'var(--ink)' },
+        { value: String(busCount), label: 'Buses live', ink: busCount > 0 ? 'var(--ink)' : 'var(--ink-3)' },
+        { value: '2', label: 'Patterns', ink: 'var(--ink)' },
+        { value: '16', label: 'Avg km/h', ink: 'var(--ink)' }
+      ],
+
+      tabs: tabs,
+      showStops: tab === 'stops',
+      showArrivals: tab === 'arrivals',
+      listTitle: tab === 'stops' ? 'Route stops' : 'Next arrivals',
+      listHint: tab === 'stops' ? 'tap to fly to stop' : 'auto-refresh 30s',
+      stops: stops,
+      arrivals: arrivals,
+
+      liveLabel: busCount === 1 ? '1 bus live' : busCount + ' buses live',
+      updatedLabel: 'Updated 28s ago',
+      followLabel: follow ? 'Following' : 'Free pan',
+      followBg: follow ? invertBg : 'transparent',
+      followInk: follow ? invertInk : 'var(--ink-2)',
+      followBorder: follow ? 'transparent' : 'var(--edge)',
+
+      routePath: routePath,
+      mapStops: mapStops,
+      buses: buses
+    };
+  }
+}
+</script>
+</body>
+</html>

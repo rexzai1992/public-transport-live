@@ -1,0 +1,23 @@
+{
+  "name": "rapid-bus-live-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Android shell for Rapid Bus Live, with local stop alerts and Firebase push.",
+  "scripts": {
+    "sync": "node scripts/bundle-web.mjs && cap sync android",
+    "open": "cap open android",
+    "build:debug": "node scripts/bundle-web.mjs && cap sync android && cd android && ./gradlew assembleDebug",
+    "build:release": "node scripts/bundle-web.mjs && cap sync android && cd android && ./gradlew assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.26",
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/geolocation": "^8.2.2",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@capacitor/push-notifications": "^8.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.0"
+  }
+}
