@@ -1939,6 +1939,75 @@ function removeUserLocation() {
   state.userLocation = null;
 }
 
+/* Nearby: nearest stops with their next departures. Schedule-based from the
+   server; Singapore bus stops are then upgraded in place with LTA's live
+   predictions, which also know how full the bus is. */
+const SG_LOAD_LABEL = { SEA: "seats", SDA: "standing", LSD: "crowded" };
+
+async function renderNearby(lat, lon) {
+  const block = document.getElementById("nearbyBlock");
+  const list = document.getElementById("nearbyList");
+  if (!block || !list) return;
+
+  try {
+    const data = await getJson(`/api/stops/nearby?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`);
+    const stops = data.stops || [];
+    block.classList.toggle("hidden", !stops.length);
+    list.innerHTML = "";
+
+    for (const stop of stops) {
+      const wrap = document.createElement("div");
+
+      const head = document.createElement("button");
+      head.type = "button";
+      head.className = "nearby-stop-head";
+      head.innerHTML = `${escapeHtml(titleCase(stopDisplayName(stop.name)))} <span class="nearby-dist">${formatDistance(stop.meters)}</span>`;
+      head.addEventListener("click", () => flyToVisible([stop.lat, stop.lon], Math.max(map.getZoom(), 16), { duration: 0.6 }));
+      wrap.appendChild(head);
+
+      const deps = document.createElement("div");
+      deps.className = "nearby-deps";
+      for (const dep of stop.departures.slice(0, 4)) {
+        const chip = document.createElement("button");
+        chip.className = "chip";
+        chip.type = "button";
+        chip.dataset.service = dep.route;
+        chip.innerHTML = `${escapeHtml(badgeLabel(dep.route))} <small>${dep.minutes}m</small>`;
+        chip.title = dep.headsign ? `towards ${titleCase(dep.headsign)}` : "";
+        chip.addEventListener("click", () => selectRoute(dep.routeId, dep.feed).catch(showError));
+        deps.appendChild(chip);
+      }
+      wrap.appendChild(deps);
+      list.appendChild(wrap);
+
+      // Singapore bus stops: swap the timetable guess for the live answer.
+      if (stop.feed === "sg-bus") {
+        upgradeSgDepartures(stop.stopId, deps);
+      }
+    }
+  } catch {
+    block.classList.add("hidden");
+  }
+}
+
+async function upgradeSgDepartures(stopCode, container) {
+  try {
+    const data = await getJson(`/api/rapid-bus/sg-bus/arrivals?stop=${stopCode}`);
+    const byService = new Map((data.services || []).map((s) => [s.service, s]));
+    container.querySelectorAll(".chip").forEach((chip) => {
+      const live = byService.get(chip.dataset.service);
+      const eta = live?.etas?.[0];
+      if (!eta) return;
+      const small = chip.querySelector("small");
+      if (!small) return;
+      small.textContent = `${eta.minutes}m${SG_LOAD_LABEL[eta.load] ? " \u00b7 " + SG_LOAD_LABEL[eta.load] : ""}`;
+      small.classList.toggle("live", eta.monitored);
+    });
+  } catch {
+    /* the schedule numbers stand */
+  }
+}
+
 function toggleLocate() {
   if (state.userMarker) {
     removeUserLocation();
@@ -1984,6 +2053,7 @@ function toggleLocate() {
         setFollow(false);
       }
       flyToVisible([lat, lon], Math.max(map.getZoom(), 15), { duration: 0.7 });
+      renderNearby(lat, lon);
       renderRouteDetails();
     },
     () => {
@@ -3643,6 +3713,29 @@ if (bootArea) {
 if (Number.isInteger(bootDirection) && bootDirection > 0) {
   state.direction = bootDirection;
 }
+
+/* Disruption strip: checked on load and every three minutes. Only rendered
+   when something is actually wrong — an empty banner is noise. */
+async function refreshAlerts() {
+  const strip = document.getElementById("alertStrip");
+  if (!strip) return;
+  try {
+    const data = await getJson("/api/alerts");
+    const alerts = data.alerts || [];
+    if (!alerts.length) {
+      strip.classList.add("hidden");
+      return;
+    }
+    strip.innerHTML = alerts
+      .map((a) => `<b>${escapeHtml(a.line)}</b> ${escapeHtml(a.message)}`)
+      .join("<br>");
+    strip.classList.remove("hidden");
+  } catch {
+    /* keep whatever is shown */
+  }
+}
+refreshAlerts();
+window.setInterval(refreshAlerts, 3 * 60 * 1000);
 
 try {
   const savedRegion = localStorage.getItem(REGION_KEY);

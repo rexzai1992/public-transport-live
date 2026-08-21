@@ -701,6 +701,97 @@ function reconstruct(
   };
 }
 
+export type NearbyDeparture = {
+  feed: FeedId;
+  routeId: string;
+  route: string;
+  headsign?: string;
+  mode: "bus" | "rail";
+  minutes: number;
+};
+
+export type NearbyStop = {
+  key: string;
+  feed: FeedId;
+  stopId: string;
+  name: string;
+  lat: number;
+  lon: number;
+  meters: number;
+  departures: NearbyDeparture[];
+};
+
+/** The commuter's opening question: what leaves near me, and when. Nearest
+    served stops with their next scheduled departures over the next hour and a
+    half, soonest first, at most two per route so one frequent service cannot
+    drown out the list. */
+export async function nearbyDepartures(
+  lat: number,
+  lon: number,
+  feeds: FeedId[],
+  limit = 6
+): Promise<NearbyStop[]> {
+  const network = await getNetwork(feeds);
+  const clock = malaysiaClock();
+  const now = clock.minutes;
+
+  const candidates: { stop: StopRef; meters: number }[] = [];
+  for (const stop of network.stops.values()) {
+    if (!network.patternsByStop.has(stop.key)) {
+      continue;
+    }
+    const meters = haversineMeters(lat, lon, stop.lat, stop.lon);
+    if (meters <= 1200) {
+      candidates.push({ stop, meters });
+    }
+  }
+  candidates.sort((a, b) => a.meters - b.meters);
+
+  const result: NearbyStop[] = [];
+  for (const { stop, meters } of candidates.slice(0, limit * 3)) {
+    const perRoute = new Map<string, number>();
+    const departures: NearbyDeparture[] = [];
+
+    for (const patternIndex of network.patternsByStop.get(stop.key) ?? []) {
+      const pattern = network.patterns[patternIndex];
+      const at = pattern.stopKeys.indexOf(stop.key);
+      if (at < 0) continue;
+      for (const trip of pattern.trips) {
+        const dep = trip.start + trip.offsets[at];
+        if (dep < now || dep > now + 90) continue;
+        const routeKey = `${pattern.feed}:${pattern.routeId}`;
+        const seen = perRoute.get(routeKey) ?? 0;
+        if (seen >= 2) continue;
+        perRoute.set(routeKey, seen + 1);
+        departures.push({
+          feed: pattern.feed,
+          routeId: pattern.routeId,
+          route: pattern.routeName,
+          headsign: pattern.headsign,
+          mode: pattern.mode,
+          minutes: dep - now
+        });
+      }
+    }
+
+    if (!departures.length) continue;
+    departures.sort((a, b) => a.minutes - b.minutes);
+    result.push({
+      key: stop.key,
+      feed: stop.feed,
+      stopId: stop.stopId,
+      name: stop.name,
+      lat: stop.lat,
+      lon: stop.lon,
+      meters: Math.round(meters),
+      departures: departures.slice(0, 6)
+    });
+    if (result.length >= limit) break;
+  }
+
+  return result;
+}
+
 /** Free-text stop lookup, for choosing a destination by name. */
 export async function searchStops(
   query: string,

@@ -40,3 +40,14 @@ export const journeySchema = z.object({
   feeds: z.string().trim().optional(),
   departAfter: z.coerce.number().int().min(0).max(1439).optional()
 });
+
+export const nearbySchema = z.object({
+  lat: z.coerce.number().min(-90).max(90),
+  lon: z.coerce.number().min(-180).max(180),
+  feeds: z.string().trim().optional(),
+  limit: z.coerce.number().int().min(1).max(10).optional()
+});
+
+export const sgArrivalSchema = z.object({
+  stop: z.string().trim().regex(/^\d{5}$/, "Singapore bus stop codes are 5 digits")
+});

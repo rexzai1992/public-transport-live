@@ -97,3 +97,39 @@ export async function getSgBusVehicles(
   cache.set(routeId, { expiresAt: Date.now() + CACHE_TTL_MS, vehicles });
   return vehicles;
 }
+
+/* Per-stop arrival predictions, passed through nearly raw: LTA's ETAs are the
+   best data Singapore has, and the load field ("SEA"/"SDA"/"LSD") is something
+   a schedule can never know. Cached briefly per stop so a popular stop cannot
+   drain the key. */
+const arrivalCache = new Map<string, { expiresAt: number; services: SgStopArrival[] }>();
+
+export type SgStopArrival = {
+  service: string;
+  etas: { minutes: number; load: string; monitored: boolean }[];
+};
+
+export async function getSgStopArrivals(stopCode: string): Promise<SgStopArrival[]> {
+  const cached = arrivalCache.get(stopCode);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.services;
+  }
+
+  const raw = await getBusArrival(stopCode);
+  const now = Date.now();
+  const services: SgStopArrival[] = raw
+    .map((service) => ({
+      service: service.ServiceNo,
+      etas: [service.NextBus, service.NextBus2, service.NextBus3]
+        .filter((bus) => bus?.EstimatedArrival)
+        .map((bus) => ({
+          minutes: Math.max(0, Math.round((Date.parse(bus.EstimatedArrival) - now) / 60000)),
+          load: bus.Load || "",
+          monitored: Number((bus as { Monitored?: number }).Monitored ?? 0) === 1
+        }))
+    }))
+    .filter((service) => service.etas.length);
+
+  arrivalCache.set(stopCode, { expiresAt: Date.now() + 20 * 1000, services });
+  return services;
+}

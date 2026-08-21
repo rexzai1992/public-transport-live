@@ -125,3 +125,36 @@ export async function getBusArrival(stopCode: string): Promise<SgArrivalService[
   );
   return data.Services ?? [];
 }
+
+/* Train service alerts: Status 1 = normal, 2 = disrupted. Cached for a minute;
+   a missing key degrades to "no alerts" rather than an error, because the
+   banner is an extra, never a blocker. */
+type TrainAlerts = {
+  value?: { Status: number; AffectedSegments?: { Line: string }[]; Message?: { Content: string }[] };
+};
+
+let alertsCache: { expiresAt: number; alerts: { line: string; message: string }[] } | null = null;
+
+export async function getTrainAlerts(): Promise<{ line: string; message: string }[]> {
+  if (alertsCache && alertsCache.expiresAt > Date.now()) {
+    return alertsCache.alerts;
+  }
+  if (!ltaKey()) {
+    return [];
+  }
+  try {
+    const data = await getJson<TrainAlerts>("/TrainServiceAlerts");
+    const value = data.value;
+    const alerts =
+      value && value.Status === 2
+        ? (value.AffectedSegments ?? []).map((segment) => ({
+            line: segment.Line,
+            message: value.Message?.[0]?.Content ?? "Service disruption"
+          }))
+        : [];
+    alertsCache = { expiresAt: Date.now() + 60 * 1000, alerts };
+    return alerts;
+  } catch {
+    return alertsCache?.alerts ?? [];
+  }
+}

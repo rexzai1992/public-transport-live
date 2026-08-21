@@ -29,6 +29,7 @@
               aria-label="Resize panel" aria-expanded="false">
         <span class="sheet-grip" aria-hidden="true"></span>
       </button>
+      <div id="alertStrip" class="alert-strip hidden" role="status"></div>
       <section class="discover" aria-label="Find a route">
         <header class="brand">
           <span class="brand-mark" aria-hidden="true">
@@ -84,6 +85,11 @@
 
 
         <div id="routesView">
+          <section id="nearbyBlock" class="block hidden">
+            <h2 class="cap">Nearby</h2>
+            <div id="nearbyList" class="nearby-list"></div>
+          </section>
+
           <section class="block">
             <h2 class="cap">Saved</h2>
             <div id="suggestRow" class="chip-row"></div>
