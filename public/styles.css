@@ -1348,6 +1348,16 @@ body.view-journey .search {
   width: 32px;
 }
 
+/* Visit tally: quiet, tabular, three characters. */
+.visit-count {
+  color: var(--ink-3);
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 /* The refresh control reads as part of the bar, not a boxed button of its
    own — the pill next to it is boxed because it carries a state. */
 .status-bar .icon-btn {

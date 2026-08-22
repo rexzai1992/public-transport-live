@@ -8,3 +8,4 @@ mobile/android/build/
 mobile/android/capacitor-cordova-android-plugins/build/
 mobile/android/local.properties
 .DS_Store
+data/
