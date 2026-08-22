@@ -2492,6 +2492,41 @@ body.mode-rail .legend-rail {
   font-weight: 700;
 }
 
+/* Platform crowd tag on SG rail stop rows. Low stays silent. */
+.crowd-dot {
+  border-radius: 6px;
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  text-transform: uppercase;
+}
+
+.crowd-dot.m { background: color-mix(in srgb, #e0a04a 22%, transparent); color: #b9770e; }
+.crowd-dot.h { background: color-mix(in srgb, #d64545 22%, transparent); color: #d64545; }
+
+html[data-theme="dark"] .crowd-dot.m { color: #e0a04a; }
+html[data-theme="dark"] .crowd-dot.h { color: #ef7a6d; }
+
+/* Expressway travel times (SG region). */
+.sg-traffic {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sg-road {
+  align-items: baseline;
+  display: flex;
+  font-size: 12.5px;
+  gap: 8px;
+}
+
+.sg-road b { flex: none; min-width: 34px; }
+.sg-road span { color: var(--ink-2); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sg-road em { color: var(--ink); font-style: normal; font-variant-numeric: tabular-nums; }
+
 /* Country switcher — floats under the status bar, same glass. */
 .region-toggle {
   background: var(--glass);

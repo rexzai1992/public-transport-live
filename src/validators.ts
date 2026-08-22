@@ -51,3 +51,7 @@ export const nearbySchema = z.object({
 export const sgArrivalSchema = z.object({
   stop: z.string().trim().regex(/^\d{5}$/, "Singapore bus stop codes are 5 digits")
 });
+
+export const crowdSchema = z.object({
+  line: z.string().trim().regex(/^[A-Z-]{3,6}$/)
+});
