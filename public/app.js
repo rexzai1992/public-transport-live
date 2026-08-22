@@ -469,6 +469,7 @@ function searchRoutes() {
   }
 
   renderRouteResults(matches, query);
+  maybeOfferFlightSearch(query);
   if (offline) {
     setStatus("Offline", "idle");
   } else if (state.activeRouteId) {
@@ -476,6 +477,57 @@ function searchRoutes() {
   } else {
     setStatus("Ready", "idle");
   }
+}
+
+/* A query shaped like a flight number ("SQ432", "AK 866") gets a find-flight
+   row above the route results — any flight, anywhere, not just overhead. */
+const FLIGHT_QUERY = /^[a-z]{2,3}\s?\d{1,4}[a-z]?$/i;
+
+function maybeOfferFlightSearch(query) {
+  if (!FLIGHT_QUERY.test(query.trim())) return;
+  const callsign = query.trim().toUpperCase().replace(/\s+/g, "");
+
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "route-row flight-find";
+  row.innerHTML = `
+    <span class="badge" style="--badge:#1c2c44">\u2708</span>
+    <span class="route-copy"><span class="route-name">Find flight ${escapeHtml(callsign)}</span>
+    <small>Live position, route and ETA \u00b7 worldwide</small></span>`;
+  row.addEventListener("click", async () => {
+    row.querySelector("small").textContent = "Searching\u2026";
+    try {
+      const data = await getJson(`/api/flights/find?callsign=${encodeURIComponent(callsign)}`);
+      const { route, aircraft } = data;
+      const routeText = route?.from && route?.to
+        ? `${route.flight || callsign}${route.airline ? " \u00b7 " + route.airline : ""} \u2014 ${route.from.iata} ${titleCase(route.from.city)} \u2192 ${route.to.iata} ${titleCase(route.to.city)}`
+        : null;
+
+      if (aircraft) {
+        row.querySelector("small").textContent = routeText || "Airborne \u2014 route unpublished";
+        setFlights(true);
+        if (state.followVehicles) setFollow(false);
+        flyToVisible([aircraft.lat, aircraft.lon], 8, { duration: 1.0 });
+        // Once the flight layer has refreshed around the new centre, open its popup.
+        window.setTimeout(async () => {
+          await refreshFlights();
+          const marker = flightState.markers.get(aircraft.hex);
+          if (marker) {
+            marker.setPopupContent("<div class='fl-pop'>Looking up flight\u2026</div>").openPopup();
+            marker.setPopupContent(await flightPopupHtml(marker.plane));
+          }
+        }, 1200);
+      } else if (routeText) {
+        row.querySelector("small").textContent = `${routeText} \u2014 not currently airborne`;
+      } else {
+        row.querySelector("small").textContent = "No flight found under that number";
+      }
+    } catch {
+      row.querySelector("small").textContent = "Flight lookup failed \u2014 try again";
+    }
+  });
+
+  routeList.prepend(row);
 }
 
 function renderRouteResults(matches, query) {
@@ -2046,16 +2098,47 @@ async function upgradeSgDepartures(stopCode, container) {
 const flightsButton = document.getElementById("flightsButton");
 const flightState = { on: false, timer: null, markers: new Map() };
 
-function planeIcon(track) {
+/* An airliner seen from above — fuselage, swept wings, tailplane — drawn
+   nose-up so rotating by the transmitted track points it where it is going. */
+const PLANE_PATH =
+  "M12 1.8c.6 0 1.1.9 1.1 2v5.1l8.6 5.1c.2.1.3.3.3.5v1.6c0 .3-.3.5-.6.4l-8.3-2.6v4.6l2.1 1.7c.1.1.2.3.2.4v1.3c0 .3-.3.5-.6.4L12 22.8l-2.8.5c-.3.1-.6-.1-.6-.4v-1.3c0-.1.1-.3.2-.4l2.1-1.7v-4.6l-8.3 2.6c-.3.1-.6-.1-.6-.4v-1.6c0-.2.1-.4.3-.5l8.6-5.1V3.8c0-1.1.5-2 1.1-2Z";
+
+function planeIcon(track, selected) {
   return L.divIcon({
     className: "",
-    html: `<div class="plane-marker" style="transform: rotate(${(track ?? 0) - 45}deg)">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-        <path d="M10.5 13.5 3.6 11a1 1 0 0 1 .1-1.9l16-4.6a1 1 0 0 1 1.2 1.3l-4.9 15.8a1 1 0 0 1-1.9 0l-2.4-6.9-1.2-1.2Z" fill="currentColor" stroke="var(--casing, rgba(0,0,0,0.5))" stroke-width="1" stroke-linejoin="round" />
+    html: `<div class="plane-marker${selected ? " sel" : ""}" style="transform: rotate(${track ?? 0}deg)">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+        <path d="${PLANE_PATH}" fill="currentColor" stroke="rgba(20,16,0,0.75)" stroke-width="0.9" stroke-linejoin="round" />
       </svg></div>`,
-    iconSize: [22, 22],
-    iconAnchor: [11, 11]
+    iconSize: [26, 26],
+    iconAnchor: [13, 13]
   });
+}
+
+/* The FR24 signature: select a plane and its route draws — solid for the
+   flown part, dashed on to the destination. */
+function drawFlightPath(plane, route) {
+  clearFlightPath();
+  if (!route?.from || !route?.to) return;
+  const flown = L.polyline(
+    [[route.from.lat, route.from.lon], [plane.lat, plane.lon]],
+    { color: "#f5c518", weight: 2.5, opacity: 0.85, interactive: false }
+  ).addTo(map);
+  const ahead = L.polyline(
+    [[plane.lat, plane.lon], [route.to.lat, route.to.lon]],
+    { color: "#f5c518", weight: 2.5, opacity: 0.85, dashArray: "6 8", interactive: false }
+  ).addTo(map);
+  flightState.path = [flown, ahead];
+}
+
+function clearFlightPath() {
+  for (const line of flightState.path ?? []) line.remove();
+  flightState.path = [];
+  if (flightState.selected) {
+    const previous = flightState.markers.get(flightState.selected);
+    previous?.setIcon(planeIcon(previous.plane?.track, false));
+    flightState.selected = null;
+  }
 }
 
 async function flightPopupHtml(plane) {
@@ -2089,23 +2172,40 @@ async function flightPopupHtml(plane) {
 async function refreshFlights() {
   if (!flightState.on) return;
   const center = map.getCenter();
+  // Cover what the viewport shows, FR24-style, not a fixed circle.
+  const corner = map.getBounds().getNorthEast();
+  const radiusNm = Math.min(250, Math.max(40, Math.ceil(haversineMeters(center.lat, center.lng, corner.lat, corner.lng) / 1852)));
   try {
-    const data = await getJson(`/api/flights?lat=${center.lat.toFixed(3)}&lon=${center.lng.toFixed(3)}`);
+    const data = await getJson(`/api/flights?lat=${center.lat.toFixed(3)}&lon=${center.lng.toFixed(3)}&r=${radiusNm}`);
     const seen = new Set();
     for (const plane of data.aircraft || []) {
       seen.add(plane.hex);
       const existing = flightState.markers.get(plane.hex);
       if (existing) {
         existing.setLatLng([plane.lat, plane.lon]);
-        existing.setIcon(planeIcon(plane.track));
+        existing.setIcon(planeIcon(plane.track, flightState.selected === plane.hex));
         existing.plane = plane;
       } else {
         const marker = L.marker([plane.lat, plane.lon], { icon: planeIcon(plane.track), zIndexOffset: 1400 });
         marker.plane = plane;
         marker.bindPopup("", { className: "fl-popup", maxWidth: 260 });
         marker.on("click", async () => {
+          clearFlightPath();
+          flightState.selected = plane.hex;
+          marker.setIcon(planeIcon(marker.plane?.track, true));
           marker.setPopupContent("<div class='fl-pop'>Looking up flight\u2026</div>").openPopup();
           marker.setPopupContent(await flightPopupHtml(marker.plane));
+          if (marker.plane?.callsign) {
+            try {
+              const data = await getJson(`/api/flights/route?callsign=${encodeURIComponent(marker.plane.callsign)}`);
+              if (flightState.selected === plane.hex) drawFlightPath(marker.plane, data.route);
+            } catch {
+              /* no path */
+            }
+          }
+        });
+        marker.on("popupclose", () => {
+          if (flightState.selected === plane.hex) clearFlightPath();
         });
         marker.addTo(map);
         flightState.markers.set(plane.hex, marker);
@@ -2132,6 +2232,7 @@ function setFlights(on) {
     refreshFlights();
     flightState.timer = window.setInterval(refreshFlights, 15000);
   } else {
+    clearFlightPath();
     for (const marker of flightState.markers.values()) marker.remove();
     flightState.markers.clear();
   }

@@ -2529,9 +2529,13 @@ html[data-theme="dark"] .crowd-dot.h { color: #ef7a6d; }
 
 /* Flight layer. */
 .plane-marker {
-  color: var(--ink);
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.35));
+  color: #f5c518; /* the yellow every flight tracker taught people to read */
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
   transition: transform 0.4s ease;
+}
+
+.plane-marker.sel {
+  color: #e8484f;
 }
 
 .fl-pop { font-size: 12.5px; line-height: 1.5; }
