@@ -84,6 +84,14 @@ html[data-theme="light"] {
   --progress-passed: rgba(0, 0, 0, 0.34);
 }
 
+html,
+body {
+  /* In-app browsers (Threads, FB, Instagram) grab overscroll for their own
+     pull-to-close gesture, which fights the sheet. Nothing here ever wants
+     page-level overscroll. */
+  overscroll-behavior-y: none;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -2509,6 +2517,51 @@ body.mode-rail .legend-rail {
 html[data-theme="dark"] .crowd-dot.m { color: #e0a04a; }
 html[data-theme="dark"] .crowd-dot.h { color: #ef7a6d; }
 
+/* In-app browser escape hatch — one slim row, dismissible per session. */
+.iab-banner {
+  align-items: center;
+  background: var(--page);
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  font-size: 12.5px;
+  gap: var(--sp-2);
+  left: 0;
+  padding: 8px calc(var(--sp-3) + var(--safe-right)) 8px calc(var(--sp-4) + var(--safe-left));
+  position: fixed;
+  right: 0;
+  top: 0;
+  z-index: 950;
+}
+
+.iab-banner span { color: var(--ink-2); flex: 1; min-width: 0; }
+
+.iab-open {
+  background: var(--invert-bg);
+  border: 0;
+  border-radius: var(--r-badge);
+  color: var(--invert-ink);
+  cursor: pointer;
+  flex: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+}
+
+.iab-dismiss {
+  background: transparent;
+  border: 0;
+  color: var(--ink-3);
+  cursor: pointer;
+  flex: none;
+  font-size: 15px;
+  height: 30px;
+  width: 30px;
+}
+
+body.iab .status-bar { top: calc(var(--sp-5) + var(--safe-top) + 40px); }
+body.iab .region-toggle { top: calc(var(--sp-5) + var(--safe-top) + 92px); }
+
 /* Flight layer. */
 /* Until the flight layer has been tried once, its button pulses a soft
    yellow ring — an invitation, dropped forever after the first tap. */
@@ -2787,6 +2840,7 @@ html[data-theme="dark"] .map-btn.discover {
     -webkit-overflow-scrolling: touch;
     overflow-y: auto;
     overscroll-behavior: contain;
+    touch-action: pan-y;
   }
 
   body.has-journey .sheet-handle {
@@ -3089,6 +3143,7 @@ html[data-theme="dark"] .map-btn.discover {
     -webkit-overflow-scrolling: touch;
     overflow-y: auto;
     overscroll-behavior: contain;
+    touch-action: pan-y;
   }
 
   /* The journey pane had the same squeeze: pinned From/To/Leave/button left
@@ -3099,6 +3154,7 @@ html[data-theme="dark"] .map-btn.discover {
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    touch-action: pan-y;
   }
 
   .jp-output {
@@ -3276,16 +3332,19 @@ html[data-theme="dark"] .map-btn.discover {
 
   /* Minimised: identity row only, map almost entirely visible. */
   body.sheet-min .rail {
+    top: 76vh;
     top: 76dvh;
   }
 
   /* Half: the default. The map stays genuinely usable. */
   body.sheet-half .rail {
+    top: 48vh;
     top: 48dvh;
   }
 
   /* Full: for reading a long list, with a strip of map still showing. */
   body.sheet-full .rail {
+    top: 10vh;
     top: 10dvh;
   }
 }
@@ -3306,10 +3365,12 @@ html[data-theme="dark"] .map-btn.discover {
   }
 
   body.sheet-min .map-controls {
+    bottom: calc(24vh + var(--sp-3));
     bottom: calc(24dvh + var(--sp-3));
   }
 
   body.sheet-half .map-controls {
+    bottom: calc(52vh + var(--sp-3));
     bottom: calc(52dvh + var(--sp-3));
   }
 
