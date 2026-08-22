@@ -4115,6 +4115,52 @@ ensureRouteIndex(bootRoute ? { thenSelect: bootRoute } : {});
 
 
 /* ------------------------------------------------------------------------ */
+/* In-app browsers (Threads, Facebook, Instagram, Messenger) wrap the page   */
+/* in a WebView that hijacks scroll and clips features. Offer the real       */
+/* browser; on Android an intent: URL usually jumps straight to it.          */
+/* ------------------------------------------------------------------------ */
+
+(function offerRealBrowser() {
+  const ua = navigator.userAgent;
+  const inApp = /FBAN|FBAV|FB_IAB|Instagram|BarcelonaAndroid|Threads|Messenger|Line\//i.test(ua);
+  if (!inApp) return;
+  try {
+    if (sessionStorage.getItem("rapidbus.iabDismissed")) return;
+  } catch {
+    /* keep going */
+  }
+
+  document.body.classList.add("iab");
+  const banner = document.createElement("div");
+  banner.className = "iab-banner";
+  banner.innerHTML = `
+    <span>Works better in your browser</span>
+    <button type="button" class="iab-open">Open in browser</button>
+    <button type="button" class="iab-dismiss" aria-label="Dismiss">\u00d7</button>
+  `;
+  banner.querySelector(".iab-open").addEventListener("click", () => {
+    const here = location.href.replace(/^https?:\/\//, "");
+    if (/android/i.test(ua)) {
+      // Chrome intent: most Android in-app WebViews honour this and hand off.
+      location.href = `intent://${here}#Intent;scheme=https;action=android.intent.action.VIEW;end`;
+    } else {
+      // iOS: Safari scheme works from several in-app browsers; harmless if not.
+      location.href = `x-safari-https://${here}`;
+    }
+  });
+  banner.querySelector(".iab-dismiss").addEventListener("click", () => {
+    banner.remove();
+    document.body.classList.remove("iab");
+    try {
+      sessionStorage.setItem("rapidbus.iabDismissed", "1");
+    } catch {
+      /* optional */
+    }
+  });
+  document.body.appendChild(banner);
+})();
+
+/* ------------------------------------------------------------------------ */
 /* PWA install — offer the home-screen prompt instead of hoping the user     */
 /* finds it in the browser menu.                                             */
 /* ------------------------------------------------------------------------ */
