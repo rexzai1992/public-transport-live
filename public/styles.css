@@ -2510,6 +2510,28 @@ html[data-theme="dark"] .crowd-dot.m { color: #e0a04a; }
 html[data-theme="dark"] .crowd-dot.h { color: #ef7a6d; }
 
 /* Flight layer. */
+/* Until the flight layer has been tried once, its button pulses a soft
+   yellow ring — an invitation, dropped forever after the first tap. */
+@media (prefers-reduced-motion: no-preference) {
+  .map-btn.discover {
+    animation: flight-pulse 2.6s ease-out infinite;
+  }
+
+  @keyframes flight-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(245, 197, 24, 0.55); }
+    45% { box-shadow: 0 0 0 11px rgba(245, 197, 24, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(245, 197, 24, 0); }
+  }
+}
+
+.map-btn.discover {
+  color: #b8860b;
+}
+
+html[data-theme="dark"] .map-btn.discover {
+  color: #f5c518;
+}
+
 .plane-marker {
   color: #f5c518; /* the yellow every flight tracker taught people to read */
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
