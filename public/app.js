@@ -248,7 +248,8 @@ function readTheme() {
   } catch {
     /* localStorage unavailable — fall through to the system preference */
   }
-  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  // Light is the default for everyone; dark is a choice made with the toggle.
+  return "light";
 }
 
 let theme = readTheme();
@@ -301,6 +302,9 @@ let baseLayer = makeBaseLayer(theme).addTo(map);
 function applyTheme(next) {
   theme = next;
   document.documentElement.dataset.theme = next;
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", next === "dark" ? "#050810" : "#f5f5f5");
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next === "dark" ? "#050505" : "#f5f5f5");
   try {
     localStorage.setItem(THEME_KEY, next);
