@@ -2767,8 +2767,13 @@ html[data-theme="dark"] .map-btn.discover {
   /* The chooser is a picker, not the content — one card's worth, scrollable.
      Everything else goes to the timeline, which is what you actually read. */
   body.has-journey .jp-output {
+    -webkit-overflow-scrolling: touch;
     flex: none;
     max-height: 104px;
+    /* The one-scroll rule sets overflow: visible, which let the OTHER journey
+       cards paint straight over the selected route's timeline on iOS. A capped
+       box must clip and scroll its own contents. */
+    overflow-y: auto;
   }
 
   /* With a journey planned the panel used to be three separate boxes: the
@@ -2785,7 +2790,7 @@ html[data-theme="dark"] .map-btn.discover {
   }
 
   body.has-journey .sheet-handle {
-    background: var(--glass-raised);
+    background: var(--page);
     position: sticky;
     top: 0;
     z-index: 6;
@@ -2925,9 +2930,11 @@ html[data-theme="dark"] .map-btn.discover {
     overflow: visible;
   }
 
-  /* Tabs stay reachable while the list scrolls past them. */
+  /* Tabs stay reachable while the list scrolls past them. Solid ground, not
+     glass: iOS Safari drops backdrop-filter inside scroll containers, and a
+     blur-less glass is just a window for the content scrolling beneath. */
   .tabs {
-    background: var(--glass-raised);
+    background: var(--page);
     position: sticky;
     top: 0;
     z-index: 3;
@@ -2940,7 +2947,7 @@ html[data-theme="dark"] .map-btn.discover {
   }
 
   .list-title {
-    background: var(--glass-raised);
+    background: var(--page);
     position: sticky;
     top: 44px;
     z-index: 2;
