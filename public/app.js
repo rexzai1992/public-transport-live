@@ -2202,8 +2202,11 @@ function flightQueryPoints() {
   return points;
 }
 
+let flightsRefreshing = false;
+
 async function refreshFlights() {
-  if (!flightState.on) return;
+  if (!flightState.on || flightsRefreshing) return;
+  flightsRefreshing = true;
   try {
     const batches = await Promise.all(
       flightQueryPoints().map((point) =>
@@ -2264,6 +2267,8 @@ async function refreshFlights() {
     }
   } catch {
     /* quiet layer */
+  } finally {
+    flightsRefreshing = false;
   }
 }
 
@@ -2302,8 +2307,12 @@ flightsButton.addEventListener("click", () => {
   }
   setFlights(!flightState.on);
 });
+let flightsMoveDebounce = null;
 map.on("moveend", () => {
-  if (flightState.on) refreshFlights();
+  if (!flightState.on) return;
+  // A pan is many moveend events; refetch once the map settles, not per twitch.
+  window.clearTimeout(flightsMoveDebounce);
+  flightsMoveDebounce = window.setTimeout(refreshFlights, 700);
 });
 
 function toggleLocate() {
