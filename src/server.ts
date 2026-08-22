@@ -34,7 +34,15 @@ app.use((_req, res, next) => {
 /* Rate limits: generous for one human, hostile to a script. The journey
    planner burns CPU and Singapore vehicle lookups burn LTA key quota —
    those two get tighter buckets than plain cached reads. */
-const readLimiter = rateLimit({ windowMs: 60_000, limit: 300, standardHeaders: true, legacyHeaders: false });
+const SPECIFIC_LIMITS = ["/api/journey", "/api/rapid-bus/sg-bus/vehicles", "/api/rapid-bus/sg-bus/map", "/api/flights"];
+const readLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Paths with their own limiter shouldn't also drain (and re-label) this one.
+  skip: (req) => SPECIFIC_LIMITS.some((path) => req.originalUrl.startsWith(path))
+});
 const journeyLimiter = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: true, legacyHeaders: false });
 const vehicleLimiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: true, legacyHeaders: false });
 /* Flights ride on free community feeds (adsb.fi wants ~1 req/s total), so the

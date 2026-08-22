@@ -71,6 +71,9 @@ function fetchUpstream(url: string, serial: boolean): Promise<Response> {
 async function providerFetch(kind: "point" | "callsign", ...args: (string | number)[]): Promise<{ ac?: Record<string, unknown>[] }> {
   if (providerIndex !== 0 && Date.now() > retryPreferredAt) {
     providerIndex = 0; // give the preferred provider another chance
+    // Stamp first so nine parallel tile calls produce ONE probe, not nine
+    // 8-second timeouts in lockstep every retry window.
+    retryPreferredAt = Date.now() + 5 * 60 * 1000;
   }
   let lastError: unknown = null;
   for (let attempt = 0; attempt < PROVIDERS.length; attempt++) {
@@ -82,7 +85,11 @@ async function providerFetch(kind: "point" | "callsign", ...args: (string | numb
     try {
       const response = await fetchUpstream(url, provider.serial);
       if (!response.ok) throw new UpstreamError(`${provider.name} returned ${response.status}`);
-      return (await response.json()) as { ac?: Record<string, unknown>[] };
+      const raw = (await response.json()) as { ac?: Record<string, unknown>[]; aircraft?: Record<string, unknown>[] };
+      // Same readsb data, different envelope: adsb.lol says "ac",
+      // adsb.fi says "aircraft". Miss this and the failover "succeeds"
+      // with permanently empty skies.
+      return { ac: raw.ac ?? raw.aircraft ?? [] };
     } catch (error) {
       lastError = error;
       providerIndex = (providerIndex + 1) % PROVIDERS.length;
