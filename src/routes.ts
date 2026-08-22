@@ -258,6 +258,49 @@ apiRouter.get("/rapid-bus/sg-rail/crowd", async (req, res, next) => {
   }
 });
 
+/* Visitor counter: one tick per browsing session (the client guards with
+   sessionStorage). File-backed so restarts keep the number; a plain count,
+   no identities, nothing stored about who visited. */
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+
+const STATS_DIR = new URL("../data/", import.meta.url);
+const STATS_FILE = new URL("../data/visits.json", import.meta.url);
+
+let visitTotal = (() => {
+  try {
+    return Number(JSON.parse(readFileSync(STATS_FILE, "utf-8")).visits) || 0;
+  } catch {
+    return 0;
+  }
+})();
+
+let statsWriteQueued = false;
+function persistVisits() {
+  if (statsWriteQueued) return;
+  statsWriteQueued = true;
+  setTimeout(() => {
+    statsWriteQueued = false;
+    try {
+      mkdirSync(STATS_DIR, { recursive: true });
+      writeFileSync(STATS_FILE, JSON.stringify({ visits: visitTotal }));
+    } catch {
+      /* the count survives in memory until the next successful write */
+    }
+  }, 2000);
+}
+
+apiRouter.get("/visit", (_req, res) => {
+  visitTotal += 1;
+  persistVisits();
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ visits: visitTotal });
+});
+
+apiRouter.get("/stats", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ visits: visitTotal });
+});
+
 apiRouter.get("/flights", async (req, res, next) => {
   try {
     const { lat, lon, r } = flightsSchema.parse(req.query);

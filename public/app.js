@@ -4021,6 +4021,30 @@ if (Number.isInteger(bootDirection) && bootDirection > 0) {
   state.direction = bootDirection;
 }
 
+/* Visitor tally beside the refresh button — compact, three characters of
+   meaning: 999, 1.1k, 12k, 1.1M. One tick per browsing session. */
+function compactCount(n) {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0).replace(/\.0$/, "")}k`;
+  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+}
+
+(async function tallyVisit() {
+  const el = document.getElementById("visitCount");
+  if (!el) return;
+  try {
+    const fresh = !sessionStorage.getItem("rapidbus.visited");
+    const data = await getJson(fresh ? "/api/visit" : "/api/stats");
+    if (fresh) sessionStorage.setItem("rapidbus.visited", "1");
+    if (Number.isFinite(data.visits) && data.visits > 0) {
+      el.textContent = compactCount(data.visits);
+      el.hidden = false;
+    }
+  } catch {
+    /* a missing tally is no loss */
+  }
+})();
+
 /* Disruption strip: checked on load and every three minutes. Only rendered
    when something is actually wrong — an empty banner is noise. */
 async function refreshAlerts() {
