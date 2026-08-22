@@ -84,6 +84,7 @@ function applyRegion(region, { fly = false } = {}) {
     btn.classList.toggle("on", btn.dataset.region === region);
   });
   searchRoutes();
+  renderSgTraffic();
   if (fly) {
     if (state.followVehicles) setFollow(false);
     map.flyTo(REGION_CENTERS[region], 11, { duration: 0.9 });
@@ -608,6 +609,7 @@ async function selectRoute(routeId, category, options = {}) {
   state.activeRouteId = routeId;
   document.body.classList.add("has-route");
   updateStarButton();
+  window.setTimeout(annotateCrowd, 800);
   revealSheet();
   window.setTimeout(() => map.invalidateSize(), 220);
   setStatus("Loading map", "loading");
@@ -1379,6 +1381,31 @@ function clearVehicleMarkers() {
 /* ------------------------------------------------------------------------ */
 /* Details panel                                                             */
 /* ------------------------------------------------------------------------ */
+
+/* Platform crowding on SG rail stop rows — LTA's only real-time train data.
+   Patched into the DOM after each render rather than threaded through it. */
+const CROWD_LABEL = { l: "low", m: "busy", h: "crowded" };
+
+async function annotateCrowd() {
+  if (state.category !== "sg-rail" || !state.activeRouteId) return;
+  try {
+    const data = await getJson(`/api/rapid-bus/sg-rail/crowd?line=${encodeURIComponent(state.activeRouteId)}`);
+    const byCode = new Map((data.stations || []).map((st) => [st.code, st.level]));
+    routeDetails.querySelectorAll(".stop-row").forEach((row) => {
+      const code = String(row.dataset.stopId || "").split(":")[1];
+      const level = byCode.get(code);
+      row.querySelector(".crowd-dot")?.remove();
+      if (!level || level === "l") return; // quiet platforms stay quiet
+      const dot = document.createElement("span");
+      dot.className = `crowd-dot ${level}`;
+      dot.textContent = CROWD_LABEL[level];
+      dot.title = `Platform crowd: ${CROWD_LABEL[level]}`;
+      row.querySelector(".stop-name")?.after(dot);
+    });
+  } catch {
+    /* crowding is garnish */
+  }
+}
 
 function renderRouteDetails() {
   const route = state.currentRoute;
@@ -3716,6 +3743,29 @@ if (bootArea) {
 }
 if (Number.isInteger(bootDirection) && bootDirection > 0) {
   state.direction = bootDirection;
+}
+
+/* Expressway travel times — Singapore region only, refreshed on switch. */
+async function renderSgTraffic() {
+  const block = document.getElementById("sgTrafficBlock");
+  const list = document.getElementById("sgTrafficList");
+  if (!block || !list) return;
+  if (state.region !== "sg") {
+    block.classList.add("hidden");
+    return;
+  }
+  try {
+    const data = await getJson("/api/sg/travel-times");
+    const roads = data.roads || [];
+    block.classList.toggle("hidden", !roads.length);
+    list.innerHTML = roads
+      .map(
+        (r) => `<div class="sg-road"><b>${escapeHtml(r.road)}</b><span>&rarr; ${escapeHtml(titleCase(r.towards))}</span><em>${r.minutes} min</em></div>`
+      )
+      .join("");
+  } catch {
+    block.classList.add("hidden");
+  }
 }
 
 /* Disruption strip: checked on load and every three minutes. Only rendered

@@ -158,3 +158,61 @@ export async function getTrainAlerts(): Promise<{ line: string; message: string 
     return alertsCache?.alerts ?? [];
   }
 }
+
+/* Platform crowding, the only real-time train data Singapore publishes:
+   10-minute windows per station, per line. Our line ids map onto LTA's —
+   the Sengkang/Punggol loops are one system each to LTA, and the stations
+   LTA still files under CEL belong to our closed Circle Line. */
+const CROWD_LINE: Record<string, string[]> = {
+  NSL: ["NSL"], EWL: ["EWL"], CGL: ["CGL"], NEL: ["NEL"], DTL: ["DTL"],
+  TEL: ["TEL"], BPL: ["BPL"], CCL: ["CCL", "CEL"],
+  "SKL-E": ["SLRT"], "SKL-W": ["SLRT"], "PGL-E": ["PLRT"], "PGL-W": ["PLRT"]
+};
+
+type PcdRow = { Station: string; CrowdLevel: string };
+
+const crowdCache = new Map<string, { expiresAt: number; stations: { code: string; level: string }[] }>();
+
+export async function getPlatformCrowd(lineId: string): Promise<{ code: string; level: string }[]> {
+  const ltaLines = CROWD_LINE[lineId];
+  if (!ltaLines || !ltaKey()) return [];
+
+  const cached = crowdCache.get(lineId);
+  if (cached && cached.expiresAt > Date.now()) return cached.stations;
+
+  const rows = (
+    await Promise.all(
+      ltaLines.map((line) =>
+        getJson<{ value: PcdRow[] }>(`/PCDRealTime?TrainLine=${line}`)
+          .then((d) => d.value ?? [])
+          .catch(() => [])
+      )
+    )
+  ).flat();
+
+  const stations = rows
+    .filter((row) => ["l", "m", "h"].includes(row.CrowdLevel))
+    .map((row) => ({ code: row.Station, level: row.CrowdLevel }));
+  crowdCache.set(lineId, { expiresAt: Date.now() + 90 * 1000, stations });
+  return stations;
+}
+
+/* Expressway travel times, aggregated per road and direction. */
+type TravelRow = { Name: string; Direction: number; FarEndPoint: string; StartPoint: string; EndPoint: string; EstTime: number };
+
+let travelCache: { expiresAt: number; roads: { road: string; towards: string; minutes: number }[] } | null = null;
+
+export async function getExpresswayTimes(): Promise<{ road: string; towards: string; minutes: number }[]> {
+  if (travelCache && travelCache.expiresAt > Date.now()) return travelCache.roads;
+  const data = await getJson<{ value: TravelRow[] }>("/EstTravelTimes");
+  const byRoute = new Map<string, { road: string; towards: string; minutes: number }>();
+  for (const row of data.value ?? []) {
+    const key = `${row.Name}:${row.Direction}`;
+    const entry = byRoute.get(key) ?? { road: row.Name, towards: row.FarEndPoint, minutes: 0 };
+    entry.minutes += Number(row.EstTime) || 0;
+    byRoute.set(key, entry);
+  }
+  const roads = [...byRoute.values()].sort((a, b) => a.road.localeCompare(b.road));
+  travelCache = { expiresAt: Date.now() + 2 * 60 * 1000, roads };
+  return roads;
+}

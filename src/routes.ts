@@ -15,7 +15,7 @@ import {
 import { buildRouteStopSchedule, malaysiaClock, withNextDepartures } from "./schedule.js";
 import { planJourney, searchStops, nearbyDepartures } from "./journey.js";
 import { getSgStopArrivals } from "./sg/vehicles.js";
-import { getTrainAlerts } from "./sg/datamall.js";
+import { getTrainAlerts, getPlatformCrowd, getExpresswayTimes } from "./sg/datamall.js";
 import {
   categoryParamSchema,
   journeySchema,
@@ -23,7 +23,7 @@ import {
   mapQuerySchema,
   routeParamSchema,
   routeSearchSchema,
-  vehicleQuerySchema, nearbySchema, sgArrivalSchema } from "./validators.js";
+  vehicleQuerySchema, nearbySchema, sgArrivalSchema, crowdSchema } from "./validators.js";
 
 export const apiRouter = Router();
 
@@ -241,6 +241,25 @@ apiRouter.get("/rapid-bus/sg-bus/arrivals", async (req, res, next) => {
 apiRouter.get("/alerts", async (_req, res, next) => {
   try {
     res.json({ alerts: await getTrainAlerts() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* Live platform crowding for one SG rail line — the only real-time train
+   data LTA publishes. Levels: l / m / h. */
+apiRouter.get("/rapid-bus/sg-rail/crowd", async (req, res, next) => {
+  try {
+    const { line } = crowdSchema.parse(req.query);
+    res.json({ line, stations: await getPlatformCrowd(line) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+apiRouter.get("/sg/travel-times", async (_req, res, next) => {
+  try {
+    res.json({ roads: await getExpresswayTimes() });
   } catch (error) {
     next(error);
   }
