@@ -2168,16 +2168,62 @@ async function flightPopupHtml(plane) {
   return `<div class="fl-pop"><div class="fl-title">${escapeHtml(title)}</div>${rows[0] ?? ""}${routeLine}${rows[1] ?? ""}<div class="fl-sub">${escapeHtml(sub)}</div></div>`;
 }
 
+/* The upstream point query tops out at 250 nm, so one call can never fill a
+   zoomed-out map. Wide views are tiled instead: up to a 3×3 grid of query
+   centres across the viewport, merged and de-duplicated. Continent views
+   fill with traffic; a whole-world view is still sampled, not complete —
+   no free feed offers a full global snapshot. */
+function flightQueryPoints() {
+  const bounds = map.getBounds();
+  const center = map.getCenter();
+  const diagNm = haversineMeters(center.lat, center.lng, bounds.getNorthEast().lat, bounds.getNorthEast().lng) / 1852;
+  if (diagNm <= 250) {
+    return [{ lat: center.lat, lon: center.lng, r: Math.max(40, Math.ceil(diagNm)) }];
+  }
+
+  const south = bounds.getSouth();
+  const north = bounds.getNorth();
+  const west = bounds.getWest();
+  const east = bounds.getEast();
+  const CELL_DEG = 7; // ~420 nm across: one 250 nm query covers most of a cell
+  const rows = Math.min(3, Math.max(1, Math.ceil((north - south) / CELL_DEG)));
+  const cols = Math.min(3, Math.max(1, Math.ceil((east - west) / CELL_DEG)));
+
+  const points = [];
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < cols; j++) {
+      points.push({
+        lat: south + ((i + 0.5) * (north - south)) / rows,
+        lon: west + ((j + 0.5) * (east - west)) / cols,
+        r: 250
+      });
+    }
+  }
+  return points;
+}
+
 async function refreshFlights() {
   if (!flightState.on) return;
-  const center = map.getCenter();
-  // Cover what the viewport shows, FR24-style, not a fixed circle.
-  const corner = map.getBounds().getNorthEast();
-  const radiusNm = Math.min(250, Math.max(40, Math.ceil(haversineMeters(center.lat, center.lng, corner.lat, corner.lng) / 1852)));
   try {
-    const data = await getJson(`/api/flights?lat=${center.lat.toFixed(3)}&lon=${center.lng.toFixed(3)}&r=${radiusNm}`);
+    const batches = await Promise.all(
+      flightQueryPoints().map((point) =>
+        getJson(`/api/flights?lat=${point.lat.toFixed(3)}&lon=${point.lon.toFixed(3)}&r=${point.r}`).catch(() => ({ aircraft: [] }))
+      )
+    );
+    const merged = new Map();
+    for (const batch of batches) {
+      for (const plane of batch.aircraft || []) {
+        if (plane.hex && !merged.has(plane.hex)) merged.set(plane.hex, plane);
+      }
+    }
+    // A phone does not need a thousand DOM markers; prefer the fastest movers
+    // (airliners), which are also the ones people recognise.
+    const aircraft = [...merged.values()]
+      .sort((a, b) => (b.gs ?? 0) - (a.gs ?? 0))
+      .slice(0, 400);
+
     const seen = new Set();
-    for (const plane of data.aircraft || []) {
+    for (const plane of aircraft) {
       seen.add(plane.hex);
       const existing = flightState.markers.get(plane.hex);
       if (existing) {
