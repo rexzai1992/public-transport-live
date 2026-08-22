@@ -37,8 +37,16 @@ app.use((_req, res, next) => {
 const readLimiter = rateLimit({ windowMs: 60_000, limit: 300, standardHeaders: true, legacyHeaders: false });
 const journeyLimiter = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: true, legacyHeaders: false });
 const vehicleLimiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: true, legacyHeaders: false });
+/* Flights ride on free community feeds (adsb.fi wants ~1 req/s total), so the
+   scarce resource is upstream goodwill, not our CPU. Tiles need at most
+   9 calls per 15 s refresh = 36/min per viewer; 120 leaves headroom without
+   letting one tab starve the feed for everyone. Lookups are rarer still. */
+const flightTileLimiter = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false });
+const flightLookupLimiter = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: true, legacyHeaders: false });
 app.use("/api/journey", journeyLimiter);
 app.use(["/api/rapid-bus/sg-bus/vehicles", "/api/rapid-bus/sg-bus/map"], vehicleLimiter);
+app.use(["/api/flights/route", "/api/flights/find"], flightLookupLimiter);
+app.use("/api/flights", flightTileLimiter);
 app.use("/api", readLimiter);
 
 /* The Android shell serves its pages from the app bundle, so its API calls are
