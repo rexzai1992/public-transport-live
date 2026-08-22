@@ -15,7 +15,7 @@ import {
 import { buildRouteStopSchedule, malaysiaClock, withNextDepartures } from "./schedule.js";
 import { planJourney, searchStops, nearbyDepartures } from "./journey.js";
 import { getSgStopArrivals } from "./sg/vehicles.js";
-import { getTrainAlerts, getPlatformCrowd, getExpresswayTimes } from "./sg/datamall.js";
+import { getTrainAlerts, getPlatformCrowd } from "./sg/datamall.js";
 import { getAircraft, getFlightRoute, findFlight } from "./flights.js";
 import {
   categoryParamSchema,
@@ -253,14 +253,6 @@ apiRouter.get("/rapid-bus/sg-rail/crowd", async (req, res, next) => {
   try {
     const { line } = crowdSchema.parse(req.query);
     res.json({ line, stations: await getPlatformCrowd(line) });
-  } catch (error) {
-    next(error);
-  }
-});
-
-apiRouter.get("/sg/travel-times", async (_req, res, next) => {
-  try {
-    res.json({ roads: await getExpresswayTimes() });
   } catch (error) {
     next(error);
   }
