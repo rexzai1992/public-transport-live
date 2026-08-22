@@ -196,23 +196,3 @@ export async function getPlatformCrowd(lineId: string): Promise<{ code: string; 
   crowdCache.set(lineId, { expiresAt: Date.now() + 90 * 1000, stations });
   return stations;
 }
-
-/* Expressway travel times, aggregated per road and direction. */
-type TravelRow = { Name: string; Direction: number; FarEndPoint: string; StartPoint: string; EndPoint: string; EstTime: number };
-
-let travelCache: { expiresAt: number; roads: { road: string; towards: string; minutes: number }[] } | null = null;
-
-export async function getExpresswayTimes(): Promise<{ road: string; towards: string; minutes: number }[]> {
-  if (travelCache && travelCache.expiresAt > Date.now()) return travelCache.roads;
-  const data = await getJson<{ value: TravelRow[] }>("/EstTravelTimes");
-  const byRoute = new Map<string, { road: string; towards: string; minutes: number }>();
-  for (const row of data.value ?? []) {
-    const key = `${row.Name}:${row.Direction}`;
-    const entry = byRoute.get(key) ?? { road: row.Name, towards: row.FarEndPoint, minutes: 0 };
-    entry.minutes += Number(row.EstTime) || 0;
-    byRoute.set(key, entry);
-  }
-  const roads = [...byRoute.values()].sort((a, b) => a.road.localeCompare(b.road));
-  travelCache = { expiresAt: Date.now() + 2 * 60 * 1000, roads };
-  return roads;
-}

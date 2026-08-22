@@ -84,7 +84,6 @@ function applyRegion(region, { fly = false } = {}) {
     btn.classList.toggle("on", btn.dataset.region === region);
   });
   searchRoutes();
-  renderSgTraffic();
   if (fly) {
     if (state.followVehicles) setFollow(false);
     map.flyTo(REGION_CENTERS[region], 11, { duration: 0.9 });
@@ -3947,29 +3946,6 @@ if (bootArea) {
 }
 if (Number.isInteger(bootDirection) && bootDirection > 0) {
   state.direction = bootDirection;
-}
-
-/* Expressway travel times — Singapore region only, refreshed on switch. */
-async function renderSgTraffic() {
-  const block = document.getElementById("sgTrafficBlock");
-  const list = document.getElementById("sgTrafficList");
-  if (!block || !list) return;
-  if (state.region !== "sg") {
-    block.classList.add("hidden");
-    return;
-  }
-  try {
-    const data = await getJson("/api/sg/travel-times");
-    const roads = data.roads || [];
-    block.classList.toggle("hidden", !roads.length);
-    list.innerHTML = roads
-      .map(
-        (r) => `<div class="sg-road"><b>${escapeHtml(r.road)}</b><span>&rarr; ${escapeHtml(titleCase(r.towards))}</span><em>${r.minutes} min</em></div>`
-      )
-      .join("");
-  } catch {
-    block.classList.add("hidden");
-  }
 }
 
 /* Disruption strip: checked on load and every three minutes. Only rendered
