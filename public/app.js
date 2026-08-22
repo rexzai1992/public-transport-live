@@ -2283,7 +2283,25 @@ function setFlights(on) {
   }
 }
 
-flightsButton.addEventListener("click", () => setFlights(!flightState.on));
+/* First-run discovery: pulse until the layer has been tried once. */
+const FLIGHTS_SEEN_KEY = "rapidbus.flightsSeen";
+try {
+  if (!localStorage.getItem(FLIGHTS_SEEN_KEY)) {
+    flightsButton.classList.add("discover");
+  }
+} catch {
+  /* no storage, no pulse */
+}
+
+flightsButton.addEventListener("click", () => {
+  flightsButton.classList.remove("discover");
+  try {
+    localStorage.setItem(FLIGHTS_SEEN_KEY, "1");
+  } catch {
+    /* optional */
+  }
+  setFlights(!flightState.on);
+});
 map.on("moveend", () => {
   if (flightState.on) refreshFlights();
 });
