@@ -2039,6 +2039,109 @@ async function upgradeSgDepartures(stopCode, container) {
   }
 }
 
+/* Flights — a nice-to-have layer, off by default. Positions from adsb.lol,
+   route (from → to) resolved per callsign on tap, ETA estimated from the
+   straight-line distance to the destination against ground speed. Community
+   data with no SLA: when it fails, the layer just goes quiet. */
+const flightsButton = document.getElementById("flightsButton");
+const flightState = { on: false, timer: null, markers: new Map() };
+
+function planeIcon(track) {
+  return L.divIcon({
+    className: "",
+    html: `<div class="plane-marker" style="transform: rotate(${(track ?? 0) - 45}deg)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <path d="M10.5 13.5 3.6 11a1 1 0 0 1 .1-1.9l16-4.6a1 1 0 0 1 1.2 1.3l-4.9 15.8a1 1 0 0 1-1.9 0l-2.4-6.9-1.2-1.2Z" fill="currentColor" stroke="var(--casing, rgba(0,0,0,0.5))" stroke-width="1" stroke-linejoin="round" />
+      </svg></div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
+  });
+}
+
+async function flightPopupHtml(plane) {
+  const rows = [];
+  const title = plane.callsign || "Unknown flight";
+  let sub = [plane.type, plane.alt ? `${Math.round(plane.alt).toLocaleString()} ft` : null, plane.gs ? `${Math.round(plane.gs * 1.852)} km/h` : null]
+    .filter(Boolean)
+    .join(" \u00b7 ");
+  let routeLine = "";
+  if (plane.callsign) {
+    try {
+      const data = await getJson(`/api/flights/route?callsign=${encodeURIComponent(plane.callsign)}`);
+      const route = data.route;
+      if (route?.from && route?.to) {
+        const flight = route.flight || plane.callsign;
+        routeLine = `<div class="fl-route"><b>${escapeHtml(route.from.iata)}</b> ${escapeHtml(titleCase(route.from.city))} \u2192 <b>${escapeHtml(route.to.iata)}</b> ${escapeHtml(titleCase(route.to.city))}</div>`;
+        rows.push(`<div class="fl-airline">${escapeHtml(flight)}${route.airline ? " \u00b7 " + escapeHtml(route.airline) : ""}</div>`);
+        if (plane.gs && plane.gs > 60) {
+          const km = haversineMeters(plane.lat, plane.lon, route.to.lat, route.to.lon) / 1000;
+          const minutes = Math.round((km / (plane.gs * 1.852)) * 60);
+          rows.push(`<div class="fl-eta">~${minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`} to ${escapeHtml(route.to.iata)} <small>estimated</small></div>`);
+        }
+      }
+    } catch {
+      /* route stays unknown */
+    }
+  }
+  return `<div class="fl-pop"><div class="fl-title">${escapeHtml(title)}</div>${rows[0] ?? ""}${routeLine}${rows[1] ?? ""}<div class="fl-sub">${escapeHtml(sub)}</div></div>`;
+}
+
+async function refreshFlights() {
+  if (!flightState.on) return;
+  const center = map.getCenter();
+  try {
+    const data = await getJson(`/api/flights?lat=${center.lat.toFixed(3)}&lon=${center.lng.toFixed(3)}`);
+    const seen = new Set();
+    for (const plane of data.aircraft || []) {
+      seen.add(plane.hex);
+      const existing = flightState.markers.get(plane.hex);
+      if (existing) {
+        existing.setLatLng([plane.lat, plane.lon]);
+        existing.setIcon(planeIcon(plane.track));
+        existing.plane = plane;
+      } else {
+        const marker = L.marker([plane.lat, plane.lon], { icon: planeIcon(plane.track), zIndexOffset: 1400 });
+        marker.plane = plane;
+        marker.bindPopup("", { className: "fl-popup", maxWidth: 260 });
+        marker.on("click", async () => {
+          marker.setPopupContent("<div class='fl-pop'>Looking up flight\u2026</div>").openPopup();
+          marker.setPopupContent(await flightPopupHtml(marker.plane));
+        });
+        marker.addTo(map);
+        flightState.markers.set(plane.hex, marker);
+      }
+    }
+    for (const [hex, marker] of flightState.markers) {
+      if (!seen.has(hex)) {
+        marker.remove();
+        flightState.markers.delete(hex);
+      }
+    }
+  } catch {
+    /* quiet layer */
+  }
+}
+
+function setFlights(on) {
+  flightState.on = on;
+  flightsButton.classList.toggle("on", on);
+  flightsButton.setAttribute("aria-pressed", String(on));
+  window.clearInterval(flightState.timer);
+  flightState.timer = null;
+  if (on) {
+    refreshFlights();
+    flightState.timer = window.setInterval(refreshFlights, 15000);
+  } else {
+    for (const marker of flightState.markers.values()) marker.remove();
+    flightState.markers.clear();
+  }
+}
+
+flightsButton.addEventListener("click", () => setFlights(!flightState.on));
+map.on("moveend", () => {
+  if (flightState.on) refreshFlights();
+});
+
 function toggleLocate() {
   if (state.userMarker) {
     removeUserLocation();

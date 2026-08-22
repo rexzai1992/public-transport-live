@@ -55,3 +55,12 @@ export const sgArrivalSchema = z.object({
 export const crowdSchema = z.object({
   line: z.string().trim().regex(/^[A-Z-]{3,6}$/)
 });
+
+export const flightsSchema = z.object({
+  lat: z.coerce.number().min(-90).max(90),
+  lon: z.coerce.number().min(-180).max(180)
+});
+
+export const flightRouteSchema = z.object({
+  callsign: z.string().trim().regex(/^[A-Z0-9]{3,8}$/i)
+});

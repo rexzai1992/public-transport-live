@@ -16,6 +16,7 @@ import { buildRouteStopSchedule, malaysiaClock, withNextDepartures } from "./sch
 import { planJourney, searchStops, nearbyDepartures } from "./journey.js";
 import { getSgStopArrivals } from "./sg/vehicles.js";
 import { getTrainAlerts, getPlatformCrowd, getExpresswayTimes } from "./sg/datamall.js";
+import { getAircraft, getFlightRoute } from "./flights.js";
 import {
   categoryParamSchema,
   journeySchema,
@@ -23,7 +24,7 @@ import {
   mapQuerySchema,
   routeParamSchema,
   routeSearchSchema,
-  vehicleQuerySchema, nearbySchema, sgArrivalSchema, crowdSchema } from "./validators.js";
+  vehicleQuerySchema, nearbySchema, sgArrivalSchema, crowdSchema, flightsSchema, flightRouteSchema } from "./validators.js";
 
 export const apiRouter = Router();
 
@@ -260,6 +261,24 @@ apiRouter.get("/rapid-bus/sg-rail/crowd", async (req, res, next) => {
 apiRouter.get("/sg/travel-times", async (_req, res, next) => {
   try {
     res.json({ roads: await getExpresswayTimes() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+apiRouter.get("/flights", async (req, res, next) => {
+  try {
+    const { lat, lon } = flightsSchema.parse(req.query);
+    res.json({ aircraft: await getAircraft(lat, lon) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+apiRouter.get("/flights/route", async (req, res, next) => {
+  try {
+    const { callsign } = flightRouteSchema.parse(req.query);
+    res.json({ callsign, route: await getFlightRoute(callsign.toUpperCase()) });
   } catch (error) {
     next(error);
   }
