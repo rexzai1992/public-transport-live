@@ -17,49 +17,126 @@ type Aircraft = {
   lon: number;
 };
 
+/* Two interchangeable position providers with the same readsb schema.
+   adsb.lol is first choice but refuses connections from some datacenter IPs
+   (it worked from a laptop and returned nothing but hangs from the VPS);
+   adsb.fi accepts them but asks for ~1 request/second, so calls to it are
+   queued rather than fired in parallel. The working provider sticks; the
+   preferred one is retried every few minutes. */
+const PROVIDERS = [
+  {
+    name: "adsb.lol",
+    point: (lat: number, lon: number, r: number) =>
+      `https://api.adsb.lol/v2/point/${lat.toFixed(2)}/${lon.toFixed(2)}/${r}`,
+    callsign: (cs: string) => `https://api.adsb.lol/v2/callsign/${encodeURIComponent(cs)}`,
+    serial: false
+  },
+  {
+    name: "adsb.fi",
+    point: (lat: number, lon: number, r: number) =>
+      `https://opendata.adsb.fi/api/v2/lat/${lat.toFixed(2)}/lon/${lon.toFixed(2)}/dist/${r}`,
+    callsign: (cs: string) => `https://opendata.adsb.fi/api/v2/callsign/${encodeURIComponent(cs)}`,
+    serial: true
+  }
+];
+
+let providerIndex = 0;
+let retryPreferredAt = 0;
+
+/* One request at a time for providers that ask for it. */
+let serialChain: Promise<unknown> = Promise.resolve();
+
+function fetchUpstream(url: string, serial: boolean): Promise<Response> {
+  const run = async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      return await fetch(url, {
+        signal: controller.signal,
+        headers: { "user-agent": "public-transport-live/1.0" }
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+  if (!serial) return run();
+  const next = serialChain.then(run, run);
+  serialChain = next.then(
+    () => new Promise((resolve) => setTimeout(resolve, 1100)),
+    () => undefined
+  );
+  return next as Promise<Response>;
+}
+
+async function providerFetch(kind: "point" | "callsign", ...args: (string | number)[]): Promise<{ ac?: Record<string, unknown>[] }> {
+  if (providerIndex !== 0 && Date.now() > retryPreferredAt) {
+    providerIndex = 0; // give the preferred provider another chance
+  }
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < PROVIDERS.length; attempt++) {
+    const provider = PROVIDERS[providerIndex];
+    const url =
+      kind === "point"
+        ? provider.point(Number(args[0]), Number(args[1]), Number(args[2]))
+        : provider.callsign(String(args[0]));
+    try {
+      const response = await fetchUpstream(url, provider.serial);
+      if (!response.ok) throw new UpstreamError(`${provider.name} returned ${response.status}`);
+      return (await response.json()) as { ac?: Record<string, unknown>[] };
+    } catch (error) {
+      lastError = error;
+      providerIndex = (providerIndex + 1) % PROVIDERS.length;
+      if (providerIndex !== 0) retryPreferredAt = Date.now() + 5 * 60 * 1000;
+    }
+  }
+  throw lastError instanceof UpstreamError ? lastError : new UpstreamError("Flight positions unavailable");
+}
+
+function toAircraft(rows: Record<string, unknown>[]): Aircraft[] {
+  return rows
+    .filter((a) => Number.isFinite(a.lat) && Number.isFinite(a.lon))
+    .map((a) => ({
+      hex: String(a.hex ?? ""),
+      callsign: String(a.flight ?? "").trim(),
+      type: a.t ? String(a.t) : undefined,
+      alt: Number.isFinite(a.alt_baro) ? Number(a.alt_baro) : undefined,
+      gs: Number.isFinite(a.gs) ? Number(a.gs) : undefined,
+      track: Number.isFinite(a.track) ? Number(a.track) : undefined,
+      lat: Number(a.lat),
+      lon: Number(a.lon)
+    }));
+}
+
 const positionsCache = new Map<string, { expiresAt: number; aircraft: Aircraft[] }>();
+const inFlight = new Map<string, Promise<Aircraft[]>>();
 
 export async function getAircraft(lat: number, lon: number, radiusNm = 60): Promise<Aircraft[]> {
   const radius = Math.max(10, Math.min(250, Math.round(radiusNm / 10) * 10));
-  // One cache cell per ~half degree and radius bucket: viewers share fetches.
+  // One cache cell per ~half degree and radius bucket: viewers share fetches,
+  // and simultaneous misses for one cell coalesce into a single upstream call.
   const cell = `${Math.round(lat * 2) / 2},${Math.round(lon * 2) / 2},${radius}`;
   const cached = positionsCache.get(cell);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.aircraft;
   }
+  const pending = inFlight.get(cell);
+  if (pending) return pending;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-  try {
-    const response = await fetch(`https://api.adsb.lol/v2/point/${lat.toFixed(2)}/${lon.toFixed(2)}/${radius}`, {
-      signal: controller.signal,
-      headers: { "user-agent": "public-transport-live/1.0" }
-    });
-    if (!response.ok) {
-      throw new UpstreamError(`adsb.lol returned ${response.status}`);
+  const work = (async () => {
+    try {
+      const data = await providerFetch("point", lat, lon, radius);
+      const aircraft = toAircraft(data.ac ?? []);
+      positionsCache.set(cell, { expiresAt: Date.now() + 15 * 1000, aircraft });
+      return aircraft;
+    } catch (error) {
+      if (cached) return cached.aircraft;
+      throw error;
+    } finally {
+      inFlight.delete(cell);
     }
-    const data = (await response.json()) as { ac?: Record<string, unknown>[] };
-    const aircraft: Aircraft[] = (data.ac ?? [])
-      .filter((a) => Number.isFinite(a.lat) && Number.isFinite(a.lon))
-      .map((a) => ({
-        hex: String(a.hex ?? ""),
-        callsign: String(a.flight ?? "").trim(),
-        type: a.t ? String(a.t) : undefined,
-        alt: Number.isFinite(a.alt_baro) ? Number(a.alt_baro) : undefined,
-        gs: Number.isFinite(a.gs) ? Number(a.gs) : undefined,
-        track: Number.isFinite(a.track) ? Number(a.track) : undefined,
-        lat: Number(a.lat),
-        lon: Number(a.lon)
-      }));
-    positionsCache.set(cell, { expiresAt: Date.now() + 15 * 1000, aircraft });
-    return aircraft;
-  } catch (error) {
-    if (cached) return cached.aircraft;
-    if (error instanceof UpstreamError) throw error;
-    throw new UpstreamError("Flight positions unavailable");
-  } finally {
-    clearTimeout(timeout);
-  }
+  })();
+  inFlight.set(cell, work);
+  return work;
 }
 
 type FlightRoute = {
@@ -143,34 +220,12 @@ export async function findFlight(callsign: string) {
   const route = await getFlightRoute(wanted);
   const transmitted = route?.icao || wanted;
 
-  let aircraft = null;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  let aircraft: Aircraft | null = null;
   try {
-    const response = await fetch(`https://api.adsb.lol/v2/callsign/${encodeURIComponent(transmitted)}`, {
-      signal: controller.signal,
-      headers: { "user-agent": "public-transport-live/1.0" }
-    });
-    if (response.ok) {
-      const data = (await response.json()) as { ac?: Record<string, unknown>[] };
-      const match = (data.ac ?? []).find((a) => Number.isFinite(a.lat) && Number.isFinite(a.lon));
-      if (match) {
-        aircraft = {
-          hex: String(match.hex ?? ""),
-          callsign: String(match.flight ?? "").trim(),
-          type: match.t ? String(match.t) : undefined,
-          alt: Number.isFinite(match.alt_baro) ? Number(match.alt_baro) : undefined,
-          gs: Number.isFinite(match.gs) ? Number(match.gs) : undefined,
-          track: Number.isFinite(match.track) ? Number(match.track) : undefined,
-          lat: Number(match.lat),
-          lon: Number(match.lon)
-        };
-      }
-    }
+    const data = await providerFetch("callsign", transmitted);
+    aircraft = toAircraft(data.ac ?? [])[0] ?? null;
   } catch {
     /* not airborne or not tracked — the route may still be worth returning */
-  } finally {
-    clearTimeout(timeout);
   }
 
   return { route, aircraft };
