@@ -2527,6 +2527,32 @@ html[data-theme="dark"] .crowd-dot.h { color: #ef7a6d; }
 .sg-road span { color: var(--ink-2); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sg-road em { color: var(--ink); font-style: normal; font-variant-numeric: tabular-nums; }
 
+/* Flight layer. */
+.plane-marker {
+  color: var(--ink);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.35));
+  transition: transform 0.4s ease;
+}
+
+.fl-pop { font-size: 12.5px; line-height: 1.5; }
+.fl-title { font-size: 14px; font-weight: 700; }
+.fl-airline { color: var(--ink-2); }
+.fl-route { margin-top: 3px; }
+.fl-eta { font-weight: 600; margin-top: 2px; }
+.fl-eta small { color: var(--ink-3); font-weight: 500; }
+.fl-sub { color: var(--ink-3); font-size: 11.5px; margin-top: 4px; }
+
+.fl-popup .leaflet-popup-content-wrapper {
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  color: var(--ink);
+}
+
+.fl-popup .leaflet-popup-tip { background: var(--glass-raised); }
+
 /* Country switcher — floats under the status bar, same glass. */
 .region-toggle {
   background: var(--glass);
