@@ -58,7 +58,8 @@ export const crowdSchema = z.object({
 
 export const flightsSchema = z.object({
   lat: z.coerce.number().min(-90).max(90),
-  lon: z.coerce.number().min(-180).max(180)
+  lon: z.coerce.number().min(-180).max(180),
+  r: z.coerce.number().min(10).max(250).optional()
 });
 
 export const flightRouteSchema = z.object({

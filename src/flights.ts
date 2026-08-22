@@ -19,9 +19,10 @@ type Aircraft = {
 
 const positionsCache = new Map<string, { expiresAt: number; aircraft: Aircraft[] }>();
 
-export async function getAircraft(lat: number, lon: number): Promise<Aircraft[]> {
-  // One cache cell per ~half degree: every viewer of a city shares one fetch.
-  const cell = `${Math.round(lat * 2) / 2},${Math.round(lon * 2) / 2}`;
+export async function getAircraft(lat: number, lon: number, radiusNm = 60): Promise<Aircraft[]> {
+  const radius = Math.max(10, Math.min(250, Math.round(radiusNm / 10) * 10));
+  // One cache cell per ~half degree and radius bucket: viewers share fetches.
+  const cell = `${Math.round(lat * 2) / 2},${Math.round(lon * 2) / 2},${radius}`;
   const cached = positionsCache.get(cell);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.aircraft;
@@ -30,7 +31,7 @@ export async function getAircraft(lat: number, lon: number): Promise<Aircraft[]>
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    const response = await fetch(`https://api.adsb.lol/v2/point/${lat.toFixed(2)}/${lon.toFixed(2)}/60`, {
+    const response = await fetch(`https://api.adsb.lol/v2/point/${lat.toFixed(2)}/${lon.toFixed(2)}/${radius}`, {
       signal: controller.signal,
       headers: { "user-agent": "public-transport-live/1.0" }
     });
@@ -64,6 +65,7 @@ export async function getAircraft(lat: number, lon: number): Promise<Aircraft[]>
 type FlightRoute = {
   airline?: string;
   flight?: string;
+  icao?: string;
   from?: { iata: string; city: string; lat: number; lon: number };
   to?: { iata: string; city: string; lat: number; lon: number };
 };
@@ -92,6 +94,7 @@ export async function getFlightRoute(callsign: string): Promise<FlightRoute | nu
       response?: {
         flightroute?: {
           callsign_iata?: string;
+          callsign_icao?: string;
           airline?: { name?: string };
           origin?: { iata_code?: string; municipality?: string; latitude?: number; longitude?: number };
           destination?: { iata_code?: string; municipality?: string; latitude?: number; longitude?: number };
@@ -103,6 +106,7 @@ export async function getFlightRoute(callsign: string): Promise<FlightRoute | nu
       ? {
           airline: fr.airline?.name,
           flight: fr.callsign_iata,
+          icao: fr.callsign_icao,
           from: fr.origin?.iata_code
             ? {
                 iata: fr.origin.iata_code,
@@ -128,4 +132,46 @@ export async function getFlightRoute(callsign: string): Promise<FlightRoute | nu
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/* Search any flight worldwide: resolve the route first (adsbdb accepts both
+   "SQ432" and "SIA432"), then look for the aircraft globally under its
+   transmitted ICAO callsign. Either half can be missing: a real flight may
+   not be airborne, an airborne freighter may have no published route. */
+export async function findFlight(callsign: string) {
+  const wanted = callsign.toUpperCase().replace(/\s+/g, "");
+  const route = await getFlightRoute(wanted);
+  const transmitted = route?.icao || wanted;
+
+  let aircraft = null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(`https://api.adsb.lol/v2/callsign/${encodeURIComponent(transmitted)}`, {
+      signal: controller.signal,
+      headers: { "user-agent": "public-transport-live/1.0" }
+    });
+    if (response.ok) {
+      const data = (await response.json()) as { ac?: Record<string, unknown>[] };
+      const match = (data.ac ?? []).find((a) => Number.isFinite(a.lat) && Number.isFinite(a.lon));
+      if (match) {
+        aircraft = {
+          hex: String(match.hex ?? ""),
+          callsign: String(match.flight ?? "").trim(),
+          type: match.t ? String(match.t) : undefined,
+          alt: Number.isFinite(match.alt_baro) ? Number(match.alt_baro) : undefined,
+          gs: Number.isFinite(match.gs) ? Number(match.gs) : undefined,
+          track: Number.isFinite(match.track) ? Number(match.track) : undefined,
+          lat: Number(match.lat),
+          lon: Number(match.lon)
+        };
+      }
+    }
+  } catch {
+    /* not airborne or not tracked — the route may still be worth returning */
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  return { route, aircraft };
 }
