@@ -11,9 +11,11 @@ type MtrecRow = {
   Remark?: string;
 };
 
-let cache: { expiresAt: number; alerts: { line: string; message: string }[] } | null = null;
+export type KlAlert = { lineId: string; line: string; message: string };
 
-export async function getKlAlerts(): Promise<{ line: string; message: string }[]> {
+let cache: { expiresAt: number; alerts: KlAlert[] } | null = null;
+
+export async function getKlAlerts(): Promise<KlAlert[]> {
   if (cache && cache.expiresAt > Date.now()) {
     return cache.alerts;
   }
@@ -32,6 +34,7 @@ export async function getKlAlerts(): Promise<{ line: string; message: string }[]
     const alerts = (data.Data ?? [])
       .filter((row) => row.Status && row.Status !== "Normal Service")
       .map((row) => ({
+        lineId: row.LineID || "",
         line: row.Line || row.LineID || "Rail",
         message: [row.Status, row.Remark].filter(Boolean).join(" — ")
       }));
