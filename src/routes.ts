@@ -304,7 +304,7 @@ apiRouter.get("/alerts", async (_req, res, next) => {
        and inside the route's own page — a banner warns, a marked line
        explains. MTREC's KA_/KC_ Komuter ids map to the KTMB lines; its other
        ids match rapid-rail-kl short names; LTA's codes match sg-rail ids. */
-    const alerts: { line: string; message: string; routes: { category: string; routeId: string }[] }[] = [];
+    const alerts: { line: string; message: string; severe: boolean; routes: { category: string; routeId: string }[] }[] = [];
 
     const klFeed = await getStaticFeed("rapid-rail-kl").catch(() => null);
     const ktmb = await getStaticFeed("ktmb").catch(() => null);
@@ -325,13 +325,15 @@ apiRouter.get("/alerts", async (_req, res, next) => {
           }
         }
       }
-      alerts.push({ line: alert.line, message: alert.message, routes });
+      alerts.push({ line: alert.line, message: alert.message, severe: alert.severe, routes });
     }
 
     for (const alert of sg) {
+      // LTA only reports trains when actually disrupted, so treat as severe.
       alerts.push({
         line: alert.line,
         message: alert.message,
+        severe: true,
         routes: [{ category: "sg-rail", routeId: alert.line }]
       });
     }
@@ -349,19 +351,20 @@ apiRouter.get("/alerts", async (_req, res, next) => {
 
 let lastAlertDigest = "";
 let alertDigestPrimed = false;
-async function maybePushAlerts(alerts: { line: string; message: string; routes?: { category: string; routeId: string }[] }[]): Promise<void> {
-  const digest = alerts.map((a) => a.line + a.message).join("|");
+async function maybePushAlerts(alerts: { line: string; message: string; severe?: boolean; routes?: { category: string; routeId: string }[] }[]): Promise<void> {
+  // Only FULL SUSPENSIONS push. Degraded service still shows in the app's
+  // banner and on the affected line, but does not send a notification.
+  const severe = alerts.filter((a) => a.severe);
+  const digest = severe.map((a) => a.line + a.message).join("|");
   if (digest === lastAlertDigest) return;
   const previous = lastAlertDigest;
   lastAlertDigest = digest;
-  // First observation after a restart just records state — don't blast a push
-  // for disruptions that were already ongoing before we started.
   if (!alertDigestPrimed) {
     alertDigestPrimed = true;
     return;
   }
-  if (!alerts.length || digest === previous) return;
-  const newest = alerts[0];
+  if (!severe.length || digest === previous) return;
+  const newest = severe[0];
   // Deep-link to the affected line so tapping the push opens its info page.
   const route = newest.routes?.[0];
   const path = route ? `/?area=${encodeURIComponent(route.category)}&route=${encodeURIComponent(route.routeId)}` : "/";
