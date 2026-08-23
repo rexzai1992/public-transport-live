@@ -1106,9 +1106,9 @@ async function toggleStopAlert(stopId) {
       setStatus("Allow notifications first", "error");
       return;
     }
-    state.stopAlerts.set(stopId, { routeKey: key });
+    state.stopAlerts.set(stopId, { routeKey: key, fired: {} });
     const stop = state.currentStops.find((f) => String(f.properties.stopId) === stopId);
-    setStatus(`Reminder set — 10 min before ${stop ? titleCase(stop.properties.name) : "this stop"}`, "live");
+    setStatus(`Reminder set — 10 & 5 min before ${stop ? titleCase(stop.properties.name) : "this stop"}`, "live");
     checkStopAlerts(); // in case a bus is already within 10 min
     updateStopPopups();
   }
@@ -1133,23 +1133,29 @@ function minutesToStop(props) {
   return Infinity;
 }
 
-/* One-time reminder ~10 minutes before the next vehicle reaches the stop.
-   Fires once, then clears itself — exactly what the user set it for. */
+/* Two-stage reminder: one at ~10 minutes out, another at ~5. Each stage fires
+   once; after the 5-minute alert the reminder clears itself. */
 function checkStopAlerts() {
   if (!state.stopAlerts.size) return;
   for (const feature of state.currentStops) {
     const stopId = String(feature.properties.stopId);
     const alert = state.stopAlerts.get(stopId);
     if (!alert) continue;
+    alert.fired = alert.fired || {};
     const mins = minutesToStop(feature.properties);
-    if (mins <= 10) {
-      state.stopAlerts.delete(stopId); // one-time
-      window.RapidBusNative?.notify(
-        `${vehicleNoun(false).replace(/^./, (c) => c.toUpperCase())} in about ${mins <= 1 ? "1 minute" : `${Math.round(mins)} minutes`}`,
-        `Heads up — your ${vehicleNoun()} reaches ${titleCase(feature.properties.name)} soon. Time to head to the stop.`
-      );
+    const name = titleCase(feature.properties.name);
+    const noun = vehicleNoun();
+    const Noun = noun.replace(/^./, (c) => c.toUpperCase());
+
+    if (mins <= 5 && !alert.fired[5]) {
+      alert.fired[5] = true;
+      state.stopAlerts.delete(stopId); // 5-min is the last stage
+      window.RapidBusNative?.notify(`${Noun} in ~5 minutes`, `Almost there — your ${noun} reaches ${name} in about 5 minutes. Head to the stop now.`);
       updateStopPopups();
       renderRouteDetails();
+    } else if (mins <= 10 && !alert.fired[10]) {
+      alert.fired[10] = true;
+      window.RapidBusNative?.notify(`${Noun} in ~10 minutes`, `Heads up — your ${noun} reaches ${name} in about 10 minutes.`);
     }
   }
 }
@@ -1366,7 +1372,7 @@ function stopPopup(feature) {
       ${props.accessible === true ? `<span>Step-free access</span>` : ""}
     </div>
     <button type="button" class="popup-remind${state.stopAlerts.has(String(props.stopId)) ? " on" : ""}" data-alert-stop="${escapeHtml(String(props.stopId))}">
-      ${state.stopAlerts.has(String(props.stopId)) ? "\u2713 Reminder set" : "\ud83d\udd14 Remind me (10 min before)"}
+      ${state.stopAlerts.has(String(props.stopId)) ? "\u2713 Reminder set" : "\ud83d\udd14 Remind me (10 & 5 min before)"}
     </button>
   `;
 }
