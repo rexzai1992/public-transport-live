@@ -47,6 +47,51 @@ ${body}
 always check the <a href="${APP}">live tracker</a> before you travel. <a href="${APP}/terms.html">Terms &amp; Privacy</a></p>
 </main></body></html>`;
 
+/* Real data, not filler: posts may embed {{ends:category:CODE}} and
+   {{stops:category:CODE}} placeholders, resolved at build time from the
+   live tracker's own API — the same feeds the app serves. A guide that
+   states "31 stations, Kwasa Damansara ↔ Kajang" got it from the GTFS
+   feed, not from a copywriter's memory. */
+async function fetchJson(url) {
+  const response = await fetch(url, { headers: { "user-agent": "blog-builder" } });
+  if (!response.ok) throw new Error(`${url} -> ${response.status}`);
+  return response.json();
+}
+
+const routeCache = new Map();
+async function routeFacts(category, code) {
+  const key = `${category}:${code}`;
+  if (routeCache.has(key)) return routeCache.get(key);
+  const list = await fetchJson(`${APP}/api/rapid-bus/${category}/routes`);
+  const route = (list.routes || []).find(
+    (r) => (r.shortName || "") === code || (r.longName || "") === code || r.routeId === code
+  );
+  if (!route) throw new Error(`route not found: ${key}`);
+  const map = await fetchJson(`${APP}/api/rapid-bus/${category}/map?routeId=${encodeURIComponent(route.routeId)}`);
+  const pattern = map.patterns?.[0];
+  const facts = {
+    ends: pattern ? `${pattern.from} ↔ ${pattern.to}` : "—",
+    stops: map.geojson.features.filter((f) => f.properties.kind === "stop").length,
+    link: `${APP}/route/${category}/${encodeURIComponent(route.routeId)}`
+  };
+  routeCache.set(key, facts);
+  return facts;
+}
+
+async function resolvePlaceholders(body) {
+  const tokens = [...body.matchAll(/\{\{(ends|stops|link):([a-z-]+):([^}]+)\}\}/g)];
+  for (const [token, kind, category, code] of tokens) {
+    try {
+      const facts = await routeFacts(category, code);
+      body = body.replaceAll(token, String(facts[kind]));
+    } catch (error) {
+      console.warn(`unresolved ${token}: ${error.message}`);
+      body = body.replaceAll(token, kind === "stops" ? "—" : "—");
+    }
+  }
+  return body;
+}
+
 const posts = readdirSync(join(here, "posts")).filter((f) => f.endsWith(".html")).sort().reverse()
   .map((file) => {
     const raw = readFileSync(join(here, "posts", file), "utf-8");
@@ -57,11 +102,15 @@ const posts = readdirSync(join(here, "posts")).filter((f) => f.endsWith(".html")
     return { ...meta, slug, body };
   });
 
+const stamp = new Date().toISOString().slice(0, 10);
 for (const post of posts) {
+  const resolved = await resolvePlaceholders(post.body);
   const body = `<h1>${post.title}</h1><p class="sub">${post.date} · Public Transport Live guide</p>
-${post.body}
-<p><a class="cta" href="${APP}">Open the live tracker — free, no login</a></p>`;
-  writeFileSync(join(out, `${post.slug}.html`), page(`${post.title} | Transit Guide`, post.desc, `${SITE}/${post.slug}.html`, body));
+${resolved}
+<p class="sub" style="margin-top:26px">Route figures on this page were generated on ${stamp} from the official
+Prasarana / LTA open-data feeds — the same source the <a href="${APP}">live tracker</a> uses. Nothing here is hand-typed.</p>
+<p><a class="cta" href="${APP}">Check it live before you travel — free, no login</a></p>`;
+  writeFileSync(join(out, `${post.slug}.html`), page(`${post.title} | Transit Guide`, post.desc, `${SITE}/${post.slug}`, body));
 }
 
 writeFileSync(join(out, "index.html"), page(
@@ -70,16 +119,16 @@ writeFileSync(join(out, "index.html"), page(
   `${SITE}/`,
   `<h1>Malaysia &amp; Singapore Transit Guide</h1>
 <p class="sub">Practical guides to buses, MRT, LRT, Monorail and KTM — paired with a <a href="${APP}">free live tracker</a>.</p>
-${posts.map((p) => `<a class="card" href="/${p.slug}.html"><b>${p.title}</b><span>${p.desc}</span></a>`).join("")}`
+${posts.map((p) => `<a class="card" href="/${p.slug}"><b>${p.title}</b><span>${p.desc}</span></a>`).join("")}`
 ));
 
 writeFileSync(join(out, "sitemap.xml"),
   `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n<url><loc>${SITE}/</loc></url>\n` +
-  posts.map((p) => `<url><loc>${SITE}/${p.slug}.html</loc></url>`).join("\n") + `\n</urlset>`);
+  posts.map((p) => `<url><loc>${SITE}/${p.slug}</loc></url>`).join("\n") + `\n</urlset>`);
 
 writeFileSync(join(out, "rss.xml"),
   `<?xml version="1.0"?><rss version="2.0"><channel><title>Malaysia & Singapore Transit Guide</title><link>${SITE}</link><description>Public transport guides for KL and Singapore</description>` +
-  posts.map((p) => `<item><title>${p.title}</title><link>${SITE}/${p.slug}.html</link><description>${p.desc}</description></item>`).join("") +
+  posts.map((p) => `<item><title>${p.title}</title><link>${SITE}/${p.slug}</link><description>${p.desc}</description></item>`).join("") +
   `</channel></rss>`);
 
 writeFileSync(join(out, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\n`);
