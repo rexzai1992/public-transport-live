@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const out = join(here, "dist");
-const SITE = "https://blog.kaynx1.com";
+const SITE = "https://travel-guide.kaynx1.com";
 const APP = "https://public.kaynx1.com";
 /* App links carry ?ref=guide so the admin panel can count guide→app arrivals. */
 const APP_REF = `${APP}/?ref=guide`;
