@@ -4320,7 +4320,17 @@ function compactCount(n) {
       : window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true
         ? "pwa"
         : "web";
-    const data = await getJson(fresh ? `/api/visit?src=${surface}` : "/api/stats");
+    // First-ever open from an installed surface: count this device once.
+    let device = "";
+    try {
+      if (surface !== "web" && !localStorage.getItem("rapidbus.deviceCounted")) {
+        localStorage.setItem("rapidbus.deviceCounted", "1");
+        device = "&device=1";
+      }
+    } catch {
+      /* storage-less: never counted, never double-counted */
+    }
+    const data = await getJson(fresh ? `/api/visit?src=${surface}${device}` : "/api/stats");
     if (fresh) sessionStorage.setItem("rapidbus.visited", "1");
     if (Number.isFinite(data.visits) && data.visits > 0) {
       el.textContent = compactCount(data.visits);

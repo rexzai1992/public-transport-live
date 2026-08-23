@@ -33,6 +33,10 @@ type Stats = {
   feedback: { at: string; stars: number; msg?: string }[];
   /** Home-screen installs observed (Chromium appinstalled events). */
   pwaInstalls: number;
+  /** Distinct installed devices seen at least once (counted on first
+      standalone open, so it includes iOS and pre-tracking installs). */
+  pwaDevices: number;
+  apkDevices: number;
 };
 
 const DATA_DIR = new URL("../data/", import.meta.url);
@@ -45,7 +49,7 @@ function load(): Stats {
   try {
     const parsed = JSON.parse(readFileSync(STATS_FILE, "utf-8")) as Stats;
     if (parsed && typeof parsed.visits === "number") {
-      return { ...parsed, days: parsed.days ?? {}, routes: parsed.routes ?? {}, routeNames: parsed.routeNames ?? {}, feedback: parsed.feedback ?? [], pwaInstalls: parsed.pwaInstalls ?? 0 };
+      return { ...parsed, days: parsed.days ?? {}, routes: parsed.routes ?? {}, routeNames: parsed.routeNames ?? {}, feedback: parsed.feedback ?? [], pwaInstalls: parsed.pwaInstalls ?? 0, pwaDevices: parsed.pwaDevices ?? 0, apkDevices: parsed.apkDevices ?? 0 };
     }
   } catch {
     /* first run, or the file is gone */
@@ -64,7 +68,9 @@ function load(): Stats {
     routes: {},
     routeNames: {},
     feedback: [],
-    pwaInstalls: 0
+    pwaInstalls: 0,
+    pwaDevices: 0,
+    apkDevices: 0
   };
 }
 
@@ -126,6 +132,12 @@ export function bumpVisit(src?: string): number {
 
 export function bumpInstall(): void {
   stats.pwaInstalls += 1;
+  persist();
+}
+
+export function bumpDevice(kind: "pwa" | "apk"): void {
+  if (kind === "pwa") stats.pwaDevices += 1;
+  else stats.apkDevices += 1;
   persist();
 }
 
@@ -197,6 +209,8 @@ export function getStats() {
       .slice(0, 15)
       .map(([key, count]) => ({ key, name: stats.routeNames[key] ?? key, count })),
     pwaInstalls: stats.pwaInstalls,
+    pwaDevices: stats.pwaDevices,
+    apkDevices: stats.apkDevices,
     feedback: stats.feedback.slice(-40).reverse(),
     feedbackAvg: stats.feedback.length
       ? Math.round((stats.feedback.reduce((sum, f) => sum + f.stars, 0) / stats.feedback.length) * 10) / 10
