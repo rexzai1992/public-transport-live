@@ -63,13 +63,13 @@ export function webSubCount(): number {
   return load().length;
 }
 
-export async function pushWebAll(title: string, body: string): Promise<{ sent: number; failed: number }> {
+export async function pushWebAll(title: string, body: string, url = "https://public.kaynx1.com/"): Promise<{ sent: number; failed: number }> {
   await init();
   if (!webpush) return { sent: 0, failed: 0 };
   const subs = load();
   if (!subs.length) return { sent: 0, failed: 0 };
 
-  const payload = JSON.stringify({ title, body, url: "https://public.kaynx1.com/" });
+  const payload = JSON.stringify({ title, body, url });
   let sent = 0;
   let failed = 0;
   const dead = new Set<string>();

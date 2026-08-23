@@ -349,7 +349,7 @@ apiRouter.get("/alerts", async (_req, res, next) => {
 
 let lastAlertDigest = "";
 let alertDigestPrimed = false;
-async function maybePushAlerts(alerts: { line: string; message: string }[]): Promise<void> {
+async function maybePushAlerts(alerts: { line: string; message: string; routes?: { category: string; routeId: string }[] }[]): Promise<void> {
   const digest = alerts.map((a) => a.line + a.message).join("|");
   if (digest === lastAlertDigest) return;
   const previous = lastAlertDigest;
@@ -362,9 +362,12 @@ async function maybePushAlerts(alerts: { line: string; message: string }[]): Pro
   }
   if (!alerts.length || digest === previous) return;
   const newest = alerts[0];
+  // Deep-link to the affected line so tapping the push opens its info page.
+  const route = newest.routes?.[0];
+  const path = route ? `/?area=${encodeURIComponent(route.category)}&route=${encodeURIComponent(route.routeId)}` : "/";
   await Promise.all([
-    pushToAll(`\u26a0 ${newest.line}`, newest.message),
-    pushWebAll(`\u26a0 ${newest.line}`, newest.message)
+    pushToAll(`\u26a0 ${newest.line}`, newest.message, path),
+    pushWebAll(`\u26a0 ${newest.line}`, newest.message, `https://public.kaynx1.com${path}`)
   ]).catch(() => {});
 }
 

@@ -75,7 +75,7 @@ export function tokenCount(): number {
 
 /* Fan out one notification to every registered device, in FCM's 500-per-batch
    limit, pruning tokens the service reports as permanently dead. */
-export async function pushToAll(title: string, body: string): Promise<{ sent: number; failed: number }> {
+export async function pushToAll(title: string, body: string, url = "/"): Promise<{ sent: number; failed: number }> {
   await init();
   if (!messaging) return { sent: 0, failed: 0 };
   const tokens = [...loadTokens()];
@@ -90,9 +90,10 @@ export async function pushToAll(title: string, body: string): Promise<{ sent: nu
     const res = await messaging.sendEachForMulticast({
       tokens: batch,
       notification: { title, body },
+      data: { url },
       android: {
         priority: "high",
-        notification: { sound: "default", channelId: "alerts", defaultVibrateTimings: true, priority: "max", icon: "ic_stat_bus" }
+        notification: { sound: "default", channelId: "alerts", defaultVibrateTimings: true, priority: "max", icon: "ic_stat_bus", clickAction: "OPEN_DEEP_LINK" }
       }
     });
     res.responses.forEach((r, index) => {
