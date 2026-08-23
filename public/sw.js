@@ -135,3 +135,44 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(shellWithRevalidate(request));
   }
 });
+
+/* ------------------------------------------------------------------------- */
+/* Web Push — show server notifications, and focus the app when one is tapped */
+/* ------------------------------------------------------------------------- */
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { title: "Public Transport Live", body: event.data ? event.data.text() : "" };
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || "Public Transport Live", {
+      body: data.body || "",
+      icon: "/assets/icon-192.png",
+      badge: "/assets/badge.png",
+      // Sound + buzz: Android plays the channel's default alert tone when the
+      // notification isn't silent and asks to vibrate. A tag+renotify means a
+      // fresh alert re-notifies instead of silently replacing the last one.
+      silent: false,
+      vibrate: [200, 100, 200],
+      renotify: true,
+      requireInteraction: true,
+      tag: "ptlive-alert",
+      data: { url: data.url || "/" }
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = event.notification.data?.url || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client) return client.focus();
+      }
+      return self.clients.openWindow(target);
+    })
+  );
+});

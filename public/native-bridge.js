@@ -34,6 +34,26 @@
   }
 
   const { LocalNotifications, PushNotifications, BackgroundGeolocation } = capacitor.Plugins;
+
+  /* A HIGH-importance channel is what makes Android show a heads-up banner
+     (the pop-over peek) with sound, instead of a silent tray entry. Both the
+     push and local notifications target this channel by id. */
+  async function ensureAlertChannel() {
+    try {
+      await LocalNotifications?.createChannel?.({
+        id: "alerts",
+        name: "Service alerts & reminders",
+        description: "Disruptions, bus reminders and stop alerts",
+        importance: 5, // IMPORTANCE_HIGH → heads-up
+        visibility: 1,
+        vibration: true,
+        sound: undefined
+      });
+    } catch {
+      /* channel API absent on this device */
+    }
+  }
+  ensureAlertChannel();
   let notificationId = 1;
 
   window.RapidBusNative = {
@@ -52,7 +72,7 @@
             id: notificationId++,
             title,
             body,
-            // Fire now, and keep it visible until dismissed.
+            channelId: "alerts",
             schedule: { at: new Date(Date.now() + 250) },
             ongoing: false,
             autoCancel: true
@@ -72,7 +92,7 @@
         if (asked.display !== "granted") return false;
       }
       await LocalNotifications.schedule({
-        notifications: [{ id, title, body, schedule: { at: atDate }, autoCancel: true }]
+        notifications: [{ id, title, body, channelId: "alerts", schedule: { at: atDate }, autoCancel: true }]
       });
       return true;
     },

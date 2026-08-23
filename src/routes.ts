@@ -19,6 +19,7 @@ import { getTrainAlerts, getPlatformCrowd } from "./sg/datamall.js";
 import { getAircraft, getFlightRoute, findFlight } from "./flights.js";
 import { getKlAlerts } from "./mtrec.js";
 import { registerToken, unregisterToken, pushToAll, tokenCount } from "./push.js";
+import { subscribeWeb, unsubscribeWeb, pushWebAll, webSubCount } from "./webpush.js";
 import { bumpVisit, bumpApi, bumpDay, bumpRoute, bumpActive, bumpTier, addFeedback, bumpInstall, bumpDevice, bumpGuideView, bumpFromGuide, visitTotal, getStats } from "./stats.js";
 import {
   categoryParamSchema,
@@ -361,7 +362,10 @@ async function maybePushAlerts(alerts: { line: string; message: string }[]): Pro
   }
   if (!alerts.length || digest === previous) return;
   const newest = alerts[0];
-  await pushToAll(`\u26a0 ${newest.line}`, newest.message).catch(() => {});
+  await Promise.all([
+    pushToAll(`\u26a0 ${newest.line}`, newest.message),
+    pushWebAll(`\u26a0 ${newest.line}`, newest.message)
+  ]).catch(() => {});
 }
 
 /* Live platform crowding for one SG rail line — the only real-time train
@@ -377,11 +381,12 @@ apiRouter.get("/rapid-bus/sg-rail/crowd", async (req, res, next) => {
 
 /* Visitor counter and usage stats — aggregate numbers only, see stats.ts. */
 export function adminStats() {
-  return { ...getStats(), pushDevices: tokenCount() };
+  return { ...getStats(), pushDevices: tokenCount(), webPushDevices: webSubCount() };
 }
 
 export async function sendAdminPush(title: string, body: string) {
-  return pushToAll(title, body);
+  const [fcm, web] = await Promise.all([pushToAll(title, body), pushWebAll(title, body)]);
+  return { sent: fcm.sent + web.sent, failed: fcm.failed + web.failed, fcm: fcm.sent, web: web.sent };
 }
 
 apiRouter.get("/visit", (req, res) => {
@@ -401,6 +406,23 @@ apiRouter.get("/visit", (req, res) => {
 
 /* Fired by the static guide site (fetch no-cors); response body is never
    read, so the pinned CORS policy stays untouched. */
+apiRouter.get("/push/vapid", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.json({ key: process.env.VAPID_PUBLIC ?? "" });
+});
+
+apiRouter.post("/push/web-subscribe", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  subscribeWeb(req.body);
+  res.json({ ok: true });
+});
+
+apiRouter.get("/push/web-unsubscribe", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  unsubscribeWeb(String(req.query.endpoint ?? ""));
+  res.json({ ok: true });
+});
+
 apiRouter.get("/push/register", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   const token = String(req.query.token ?? "");

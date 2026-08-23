@@ -3888,6 +3888,7 @@ async function toggleReminders() {
         /* optional */
       }
       registerPushIfAllowed();
+      subscribeWebPushIfAllowed();
     }
   }
   renderJourneySteps(journey);
@@ -4526,16 +4527,58 @@ async function registerPushIfAllowed() {
   const native = window.RapidBusNative;
   if (!native?.isNative || !native.registerPush) return;
   try {
-    if (!localStorage.getItem("rapidbus.pushOptIn")) return;
+    // Native app: ask once on first launch (the OS shows its own dialog), the
+    // normal pattern for a transit app that exists to alert you. Declining is
+    // remembered so we never nag. registerPush() requests the permission.
+    if (localStorage.getItem("rapidbus.pushDeclined")) return;
     const token = await native.registerPush();
     if (token) {
+      localStorage.setItem("rapidbus.pushOptIn", "1");
       await fetch(apiUrl(`/api/push/register?token=${encodeURIComponent(token)}`), { keepalive: true }).catch(() => {});
+    } else {
+      localStorage.setItem("rapidbus.pushDeclined", "1");
     }
   } catch {
     /* push is optional */
   }
 }
 registerPushIfAllowed();
+
+/* Web Push (browser / PWA, non-APK): subscribe through the service worker
+   using the server's VAPID key. Opt-in — only runs once the user has enabled
+   notifications, and is idempotent, so calling it again just re-confirms. */
+function urlBase64ToUint8Array(base64) {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+async function subscribeWebPushIfAllowed() {
+  if (window.Capacitor?.isNativePlatform?.()) return; // APK uses FCM instead
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  try {
+    if (!localStorage.getItem("rapidbus.pushOptIn")) return;
+    if (Notification.permission !== "granted") return;
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const { key } = await getJson("/api/push/vapid");
+      if (!key) return;
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key)
+      });
+      await fetch(apiUrl("/api/push/web-subscribe"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(sub)
+      }).catch(() => {});
+    }
+  } catch {
+    /* web push is optional */
+  }
+}
+subscribeWebPushIfAllowed();
 
 /* Disruption strip: checked on load and every three minutes. Only rendered
    when something is actually wrong — an empty banner is noise. */
