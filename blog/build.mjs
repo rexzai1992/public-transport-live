@@ -226,6 +226,18 @@ writeFileSync(join(out, "rss.xml"),
   posts.map((p) => `<item><title>${p.title}</title><link>${SITE}/${p.slug}</link><description>${p.desc}</description></item>`).join("") +
   `</channel></rss>`);
 
+writeFileSync(join(out, "llms.txt"), `# Malaysia & Singapore Transit Guide
+
+> Practical guides to public transport in Kuala Lumpur and Singapore: rail line guides, bus how-tos, KTM Komuter, and airport transport — companion site to the free live tracker Public Transport Live (https://public.kaynx1.com), which shows real-time bus GPS, train times, crowding and a journey planner for both countries.
+
+## Guides
+${posts.map((p) => `- [${p.title}](${SITE}/${p.slug}): ${p.desc}`).join("\n")}
+
+## The app
+- [Public Transport Live](https://public.kaynx1.com/): free live tracker, no ads, no login
+- [All routes with timetables](https://public.kaynx1.com/routes)
+`);
+
 writeFileSync(join(out, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\n`);
 writeFileSync(join(out, "_headers"), `/*\n  Cache-Control: public, max-age=3600\n  X-Content-Type-Options: nosniff\n`);
 

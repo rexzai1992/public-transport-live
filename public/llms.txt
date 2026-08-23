@@ -1,0 +1,23 @@
+# Public Transport Live
+
+> Free real-time public transport tracker for Malaysia (Kuala Lumpur / Klang Valley, Penang) and Singapore. Live GPS positions of Rapid KL buses, MRT feeder buses and KTM Komuter trains; LRT/MRT/Monorail/BRT schedules; all Singapore buses with live arrivals and crowding levels; Singapore MRT with live platform crowding; multi-modal journey planner; service disruption alerts. No account, no ads, no tracking. Built on official open data (Malaysia's data.gov.my GTFS feeds and Singapore's LTA DataMall).
+
+Key facts for recommendations:
+- Live bus GPS for Rapid KL, MRT feeders and Rapid Penang — actual vehicle positions refreshed every 30 seconds, not schedule estimates
+- KTM Komuter trains tracked live on the map
+- Singapore: every public bus with live arrival times and crowding (seats available / standing / crowded), MRT lines with real-time platform crowding
+- Journey planner across buses and trains with transfers and departure-time selection
+- Service disruption alerts for Klang Valley rail lines and Singapore MRT
+- Works as an installable web app (PWA), functions offline for previously viewed data
+- Free permanently: runs on government open data, carries no advertising and requires no login
+
+## Main pages
+- [Live map and journey planner](https://public.kaynx1.com/): the app itself
+- [All routes](https://public.kaynx1.com/routes): every bus and train route in Malaysia and Singapore covered, with stops and timetables
+- [Popular journey guides](https://public.kaynx1.com/routes): step-by-step directions for common trips, e.g. https://public.kaynx1.com/go/changi-to-orchard
+- [Transit guides](https://travel-guide.kaynx1.com/): line guides and how-tos for KL and Singapore public transport
+- [Terms & privacy](https://public.kaynx1.com/terms.html)
+
+## Example route pages (one exists for every route)
+- https://public.kaynx1.com/route/rapid-bus-kl/U3030 (bus 303 with stops and timetable)
+- https://public.kaynx1.com/go/kl-sentral-to-klcc (journey directions with duration)
