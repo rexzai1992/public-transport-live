@@ -22,12 +22,22 @@ const PAGE_STYLE = `<style>
 :root { --bg:#f5f5f5; --card:#fff; --ink:#16202c; --ink2:#5b6b7d; --rule:#e3e8ee; --accent:#175fc0; }
 @media (prefers-color-scheme: dark){ :root { --bg:#050810; --card:#111825; --ink:#eaf2ff; --ink2:#a9c9ec; --rule:#22304a; --accent:#7cc4ff; } }
 *{box-sizing:border-box} body{background:var(--bg);color:var(--ink);font:15px/1.65 system-ui,sans-serif;margin:0;padding:28px 18px 64px}
-main{margin:0 auto;max-width:640px} h1{font-size:22px;line-height:1.3;margin:0 0 4px}
+main{margin:0 auto;max-width:720px}
+main.wide{max-width:1100px}
+h1{font-size:24px;line-height:1.3;margin:0 0 4px}
 .sub{color:var(--ink2);font-size:13px;margin:0 0 18px}
-.cta{background:var(--accent);border-radius:10px;color:#fff;display:inline-block;font-weight:600;margin:6px 0 22px;padding:10px 18px;text-decoration:none}
-h2{font-size:15px;margin:22px 0 8px} ol{margin:0;padding-left:22px} li{margin:2px 0}
+.cta{background:var(--accent);border-radius:10px;color:#fff;display:inline-block;font-weight:600;margin:6px 12px 22px 0;padding:10px 18px;text-decoration:none}
+h2{font-size:16px;margin:22px 0 8px} ol{margin:0;padding-left:22px} li{margin:2px 0}
 a{color:var(--accent)} .foot{color:var(--ink2);font-size:12px;margin-top:28px}
-.cols{columns:2 260px;column-gap:28px}
+.cols{columns:4 220px;column-gap:28px}
+.filter{background:var(--card);border:1px solid var(--rule);border-radius:10px;color:var(--ink);display:block;font:inherit;margin:0 0 18px;max-width:420px;padding:11px 14px;width:100%}
+.filter:focus{border-color:var(--accent);outline:none}
+details{background:var(--card);border:1px solid var(--rule);border-radius:12px;margin:10px 0;padding:4px 18px 8px}
+details summary{cursor:pointer;font-size:15px;font-weight:650;padding:10px 0}
+details summary small{color:var(--ink2);font-weight:500}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 18px}
+.chips a{background:var(--card);border:1px solid var(--rule);border-radius:999px;color:var(--ink);font-size:13px;padding:7px 14px;text-decoration:none}
+.chips a:hover{border-color:var(--accent)}
 </style>`;
 
 function feedIdOf(value: string): FeedId | null {
@@ -50,7 +60,8 @@ seoRouter.get("/routes", async (_req, res, next) => {
               }</a></li>`
           )
           .join("");
-        return `<h2>${esc(feedDefinition(feedId).label)}</h2><ol class="cols">${rows}</ol>`;
+        const count = listRoutes(feed).length;
+        return `<details${feedId === "rapid-bus-kl" ? " open" : ""}><summary>${esc(feedDefinition(feedId).label)} <small>· ${count} routes</small></summary><ol class="cols">${rows}</ol></details>`;
       })
     );
 
@@ -59,11 +70,19 @@ seoRouter.get("/routes", async (_req, res, next) => {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>All routes — Public Transport Live (Malaysia & Singapore)</title>
 <meta name="description" content="Every bus, LRT, MRT, Monorail and KTM route in the Public Transport Live tracker: Rapid KL, MRT Feeder, Rapid Penang, Rapid Rail, KTM Komuter and Singapore buses and trains.">
-<link rel="canonical" href="https://public.kaynx1.com/routes">${PAGE_STYLE}</head><body><main>
+<link rel="canonical" href="https://public.kaynx1.com/routes">${PAGE_STYLE}</head><body><main class="wide">
 <h1>All routes</h1>
 <p class="sub">Malaysia &amp; Singapore public transport — live positions, stops and timetables.</p>
 <a class="cta" href="/">Open the live map</a>
-<h2>Popular journeys</h2><ol>${JOURNEY_PAIRS.map((p) => `<li><a href="/go/${p.slug}">${esc(p.fromName)} → ${esc(p.toName)}</a></li>`).join("")}</ol>
+<h2>Popular journeys</h2>
+<div class="chips">${JOURNEY_PAIRS.map((p) => `<a href="/go/${p.slug}">${esc(p.fromName)} → ${esc(p.toName)}</a>`).join("")}</div>
+<input class="filter" type="search" placeholder="Filter routes… (e.g. 851, Kajang, T117)" oninput="
+  const q=this.value.trim().toLowerCase();
+  document.querySelectorAll('details').forEach(d=>{
+    let any=false;
+    d.querySelectorAll('li').forEach(li=>{const hit=!q||li.textContent.toLowerCase().includes(q);li.style.display=hit?'':'none';if(hit)any=true;});
+    d.style.display=any?'':'none'; if(q)d.open=true;
+  });">
 ${sections.join("")}
 <p class="foot"><a href="/">Public Transport Live</a> · <a href="/terms.html">Terms &amp; Privacy</a></p>
 </main></body></html>`);
