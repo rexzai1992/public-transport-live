@@ -17,6 +17,7 @@ import { planJourney, searchStops, nearbyDepartures, stopBoard } from "./journey
 import { getSgStopArrivals } from "./sg/vehicles.js";
 import { getTrainAlerts, getPlatformCrowd } from "./sg/datamall.js";
 import { getAircraft, getFlightRoute, findFlight } from "./flights.js";
+import { getKlAlerts } from "./mtrec.js";
 import { bumpVisit, bumpApi, bumpDay, bumpRoute, bumpActive, bumpTier, addFeedback, bumpInstall, bumpDevice, bumpGuideView, bumpFromGuide, visitTotal, getStats } from "./stats.js";
 import {
   categoryParamSchema,
@@ -291,11 +292,12 @@ apiRouter.get("/rapid-bus/sg-bus/arrivals", async (req, res, next) => {
   }
 });
 
-/* Service disruptions. Singapore rail comes from LTA; Malaysia has no
-   equivalent API, so its entries can only ever arrive by hand. */
+/* Service disruptions, both countries: Singapore rail from LTA's official
+   alerts, Klang Valley lines from the MTREC community API. */
 apiRouter.get("/alerts", async (_req, res, next) => {
   try {
-    res.json({ alerts: await getTrainAlerts() });
+    const [sg, kl] = await Promise.all([getTrainAlerts(), getKlAlerts()]);
+    res.json({ alerts: [...kl, ...sg] });
   } catch (error) {
     next(error);
   }
