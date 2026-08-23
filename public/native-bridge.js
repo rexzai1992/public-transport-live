@@ -166,6 +166,17 @@
       }
     },
 
+    /* Fires only when the user TAPS a notification (push or local), with the
+       notification's data payload — used to deep-link into the right page. */
+    onNotificationTap(handler) {
+      PushNotifications?.addListener("pushNotificationActionPerformed", (action) =>
+        handler(action?.notification?.data || {})
+      );
+      LocalNotifications?.addListener?.("localNotificationActionPerformed", (action) =>
+        handler(action?.notification?.extra || {})
+      );
+    },
+
     onPush(handler) {
       PushNotifications?.addListener("pushNotificationReceived", handler);
       PushNotifications?.addListener("pushNotificationActionPerformed", (action) =>
