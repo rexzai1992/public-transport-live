@@ -4717,6 +4717,37 @@ function openFromNotification(data) {
 }
 window.RapidBusNative?.onNotificationTap?.(openFromNotification);
 
+/* Always-available "Get the app" in the footer — shows the install options on
+   demand, even if the auto-popup was dismissed. Picks the right mode per
+   platform; on Android without a live prompt it offers the APK + manual add. */
+document.getElementById("getAppLink")?.addEventListener("click", (event) => {
+  event.preventDefault();
+  document.getElementById("installCard")?.remove();
+  const ua = navigator.userAgent;
+  if (window.Capacitor?.isNativePlatform?.()) {
+    setStatus("You are using the app", "live");
+    return;
+  }
+  if (/iphone|ipad|ipod/i.test(ua)) {
+    showInstallCard({ mode: "ios" });
+  } else if (deferredInstall) {
+    showInstallCard({
+      mode: "android",
+      onInstall: async () => {
+        deferredInstall.prompt();
+        const choice = await deferredInstall.userChoice.catch(() => null);
+        deferredInstall = null;
+        if (choice?.outcome !== "accepted") markInstallDismissed();
+      }
+    });
+  } else if (/android/i.test(ua)) {
+    showInstallCard({ mode: "android-fallback" });
+  } else {
+    // Desktop: just take them straight to the APK (or they can use the PWA).
+    window.location.href = "/download/ptlive.apk";
+  }
+});
+
 /* Web Push (browser / PWA, non-APK): subscribe through the service worker
    using the server's VAPID key. Opt-in — only runs once the user has enabled
    notifications, and is idempotent, so calling it again just re-confirms. */
