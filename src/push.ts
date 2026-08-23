@@ -90,7 +90,10 @@ export async function pushToAll(title: string, body: string): Promise<{ sent: nu
     const res = await messaging.sendEachForMulticast({
       tokens: batch,
       notification: { title, body },
-      android: { priority: "high", notification: { sound: "default" } }
+      android: {
+        priority: "high",
+        notification: { sound: "default", channelId: "alerts", defaultVibrateTimings: true, priority: "max" }
+      }
     });
     res.responses.forEach((r, index) => {
       if (r.success) {

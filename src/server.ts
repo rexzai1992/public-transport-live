@@ -21,6 +21,7 @@ const host = process.env.HOST ?? "0.0.0.0";
 app.set("trust proxy", 1);
 
 app.use(morgan("dev"));
+app.use(express.json({ limit: "16kb" }));
 
 /* Security headers. The API is read-only JSON and the shell is same-origin
    static files, so the policy can be strict. connect-src lists the two hosts
@@ -266,7 +267,7 @@ fetch("/my-admin/data").then((r)=>r.json()).then((d)=>{
     ["PWA installs seen",d.pwaInstalls||0],["PWA visits today",t.pwa||0],["APK visits today",t.apk||0],
     ["Browser visits today",Math.max(0,(t.visits||0)-(t.pwa||0)-(t.apk||0))],
     ["Guide views today",t.guideViews||0],["Came from guide",t.fromGuide||0],
-    ["Push devices",d.pushDevices||0]];
+    ["Push devices (app)",d.pushDevices||0],["Push devices (web)",d.webPushDevices||0]];
   document.getElementById("cards").innerHTML=cards.map(([k,v])=>"<div class=card><b>"+(typeof v==="number"?v.toLocaleString():v)+"</b><span>"+k+"</span></div>").join("");
   document.getElementById("chart").innerHTML=days.length?chart(days):"<span style=color:var(--ink2);font-size:12px>no days yet</span>";
   document.getElementById("fbh").textContent="Feedback"+(d.feedbackCount?" \u2014 "+d.feedbackAvg+"\u2605 avg \u00b7 "+d.feedbackCount+" total":"");
