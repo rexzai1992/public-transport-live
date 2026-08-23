@@ -98,7 +98,9 @@ ${style}</head><body><a class="topbar" href="/">
 <main${wide ? ' class="wide"' : ""}${accent ? ` style="--accent:${accent}"` : ""}>
 ${body}
 <p class="foot">Public Transport Live — independent guide built on open data. Times shown are typical and change;
-always check the <a href="${APP_REF}">live tracker</a> before you travel. <a href="${APP}/terms.html">Terms &amp; Privacy</a></p>
+always check the <a href="${APP_REF}">live tracker</a> before you travel.
+&nbsp;·&nbsp; <a href="${APP}/download/ptlive.apk">Get the Android app</a>
+&nbsp;·&nbsp; <a href="${APP}/terms.html">Terms &amp; Privacy</a></p>
 </main>
 <script>try{fetch("${APP}/api/guide-view?page="+encodeURIComponent(location.pathname),{mode:"no-cors"})}catch(e){}</script>
 </body></html>`;
