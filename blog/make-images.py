@@ -33,7 +33,13 @@ FALLBACK = {"KGL":"#1b8a3e","PYL":"#f9a825","KJL":"#d32f2f","AGL":"#ef6c00","SPL
             "SAL":"#8e24aa","MRL":"#2e7d32","BRT":"#00838f","NSL":"#d42e12","EWL":"#009645",
             "CGL":"#009645","NEL":"#9900aa","CCL":"#fa9e0d","DTL":"#005ec4","TEL":"#9d5b25"}
 
-def build(name, lat, lon, z, lines, cols=3, rows=2):
+from PIL import ImageFont
+try:
+    FONT = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 15)
+except Exception:
+    FONT = ImageFont.load_default()
+
+def build(name, lat, lon, z, lines, cols=3, rows=2, labels=True):
     cx, cy = tile_xy(lat, lon, z)
     x0, y0 = int(cx - cols / 2), int(cy - rows / 2)
     canvas = Image.new("RGB", (cols * 512, rows * 512))
@@ -47,14 +53,20 @@ def build(name, lat, lon, z, lines, cols=3, rows=2):
         return ((tx - x0) * 512, (ty - y0) * 512)
 
     resolved = []
+    stops_all = []
     for cat, code, color in lines:
         route = resolve(cat, code)
         rid = urllib.parse.quote(route["routeId"])
         data = json.loads(http(f"{APP}/api/rapid-bus/{cat}/map?routeId={rid}"))
         col = color or ("#" + route["color"] if route.get("color") else FALLBACK.get(code, "#2563eb"))
-        shapes = [f["geometry"]["coordinates"] for f in data["geojson"]["features"]
-                  if f["properties"].get("kind") == "route-shape"]
+        feats = data["geojson"]["features"]
+        shapes = [f["geometry"]["coordinates"] for f in feats if f["properties"].get("kind") == "route-shape"]
         resolved.append((col, [[px(la, lo) for lo, la in shape] for shape in shapes]))
+        for f in feats:
+            if f["properties"].get("kind") == "stop":
+                lo, la = f["geometry"]["coordinates"]
+                nm = str(f["properties"].get("name", "")).split("(")[0].strip()
+                stops_all.append((px(la, lo), nm, col))
 
     # casing pass first so overlapping lines stay readable, then colour pass
     for _, shape_sets in resolved:
@@ -68,9 +80,32 @@ def build(name, lat, lon, z, lines, cols=3, rows=2):
                 for tx, ty in (pts[0], pts[-1]):
                     draw.ellipse([tx-7, ty-7, tx+7, ty+7], fill="#ffffff", outline=col, width=4)
 
+    # Stop dots for every station; names greedily labelled with collision
+    # avoidance — a label that would overlap an earlier one is skipped, so the
+    # dense city core stays readable while outer stations all get named.
+    if labels and stops_all:
+        seen_pts = set()
+        boxes = []
+        W, H = canvas.size
+        for (sx, sy), nm, col in stops_all:
+            keypt = (round(sx / 6), round(sy / 6))
+            if keypt in seen_pts or not (0 <= sx <= W and 0 <= sy <= H):
+                continue
+            seen_pts.add(keypt)
+            draw.ellipse([sx - 4.5, sy - 4.5, sx + 4.5, sy + 4.5], fill="#ffffff", outline=col, width=3)
+            if not nm:
+                continue
+            tw = draw.textlength(nm, font=FONT)
+            box = (sx + 8, sy - 9, sx + 8 + tw + 4, sy + 9)
+            if any(not (box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3]) for b in boxes):
+                continue
+            boxes.append(box)
+            draw.text((sx + 10, sy - 8), nm, font=FONT, fill="#1a2330",
+                      stroke_width=3, stroke_fill="#ffffff")
+
     canvas = canvas.resize((cols * 341, rows * 341))
     canvas.save(f"img/{name}.webp", "WEBP", quality=82, method=6)
-    print(name, "with", len(lines), "lines")
+    print(name, "with", len(lines), "lines,", len(stops_all), "stops")
 
 RAIL = "rapid-rail-kl"
 build("klang-valley-rail", 3.12, 101.66, 11,

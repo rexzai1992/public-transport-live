@@ -31,7 +31,7 @@ const style = `<link rel="preconnect" href="https://fonts.googleapis.com"><link 
 }}
 *{box-sizing:border-box}
 body{background:var(--page);color:var(--ink);font:16px/1.75 Inter,-apple-system,"Segoe UI",sans-serif;margin:0;padding:28px 20px 72px}
-main{margin:0 auto;max-width:760px}
+main{margin:0 auto;max-width:1050px}
 main.wide{max-width:1100px}
 .brand{align-items:center;display:flex;gap:12px;margin-bottom:26px;text-decoration:none}
 .brand-mark{align-items:center;background:var(--invert-bg);border-radius:12px;display:flex;flex:none;height:40px;justify-content:center;width:40px}
