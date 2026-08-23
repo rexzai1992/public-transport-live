@@ -2688,6 +2688,27 @@ body.mode-rail .legend-rail {
   color: var(--live);
 }
 
+/* Remind-me button inside the map stop popup. */
+.popup-remind {
+  background: var(--invert-bg);
+  border: 0;
+  border-radius: var(--r-btn);
+  color: var(--invert-ink);
+  cursor: pointer;
+  display: block;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 8px;
+  padding: 8px 12px;
+  width: 100%;
+}
+
+.popup-remind.on {
+  background: color-mix(in srgb, var(--live) 20%, transparent);
+  color: var(--live);
+}
+
 .route-advisory {
   background: color-mix(in srgb, #d97706 14%, transparent);
   border-left: 3px solid #d97706;

@@ -63,11 +63,24 @@ app.use("/api", readLimiter);
 /* The Android shell serves its pages from the app bundle, so its API calls are
    cross-origin. Everything here is read-only public transit data, so GET is
    opened up; set CORS_ORIGIN to pin it to one origin instead. */
-const corsOrigin = process.env.CORS_ORIGIN ?? "*";
+/* The web app is one pinned origin, but the Android/iOS shell runs at
+   Capacitor's own origins (https://localhost, capacitor://localhost). Those
+   must be allowed too or every API call from the APK is CORS-blocked and the
+   app wrongly shows "Offline". Reflect the request origin when it is on the
+   allow-list; fall back to the pinned web origin otherwise. */
+const pinnedOrigin = process.env.CORS_ORIGIN ?? "*";
+const allowedOrigins = new Set([pinnedOrigin, "https://localhost", "capacitor://localhost", "http://localhost"]);
 
 app.use("/api", (req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", corsOrigin);
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  const origin = req.headers.origin;
+  if (pinnedOrigin === "*") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  } else if (origin && allowedOrigins.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", pinnedOrigin);
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Vary", "Origin");
 
