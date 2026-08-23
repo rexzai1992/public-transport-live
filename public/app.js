@@ -1106,31 +1106,50 @@ async function toggleStopAlert(stopId) {
       setStatus("Allow notifications first", "error");
       return;
     }
-    state.stopAlerts.set(stopId, { fired: false, routeKey: key });
+    state.stopAlerts.set(stopId, { routeKey: key });
     const stop = state.currentStops.find((f) => String(f.properties.stopId) === stopId);
-    setStatus(`Will alert for ${stop ? titleCase(stop.properties.name) : "this stop"}`, "live");
+    setStatus(`Reminder set — 10 min before ${stop ? titleCase(stop.properties.name) : "this stop"}`, "live");
+    checkStopAlerts(); // in case a bus is already within 10 min
+    updateStopPopups();
   }
   renderRouteDetails();
 }
 
+/* Minutes until the next vehicle reaches this stop: the live ETA if a bus is
+   actually approaching, otherwise minutes to the next scheduled departure. */
+function minutesToStop(props) {
+  const eta = Number(props.etaMinutes);
+  if (Number.isFinite(eta)) return eta;
+  const times = Array.isArray(props.nextDepartures) ? props.nextDepartures : [];
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  for (const t of times) {
+    const [h, m] = String(t).split(":").map(Number);
+    if (Number.isFinite(h) && Number.isFinite(m)) {
+      const diff = h * 60 + m - nowMin;
+      if (diff >= 0) return diff;
+    }
+  }
+  return Infinity;
+}
+
+/* One-time reminder ~10 minutes before the next vehicle reaches the stop.
+   Fires once, then clears itself — exactly what the user set it for. */
 function checkStopAlerts() {
   if (!state.stopAlerts.size) return;
   for (const feature of state.currentStops) {
     const stopId = String(feature.properties.stopId);
     const alert = state.stopAlerts.get(stopId);
-    if (!alert || alert.fired) continue;
-    const eta = Number(feature.properties.etaMinutes);
-    if (Number.isFinite(eta) && eta <= 3) {
-      alert.fired = true;
+    if (!alert) continue;
+    const mins = minutesToStop(feature.properties);
+    if (mins <= 10) {
+      state.stopAlerts.delete(stopId); // one-time
       window.RapidBusNative?.notify(
-        `${vehicleNoun(false).replace(/^./, (c) => c.toUpperCase())} approaching`,
-        `A ${vehicleNoun()} is about ${eta <= 1 ? "1 minute" : `${Math.round(eta)} minutes`} from ${titleCase(feature.properties.name)}.`
+        `${vehicleNoun(false).replace(/^./, (c) => c.toUpperCase())} in about ${mins <= 1 ? "1 minute" : `${Math.round(mins)} minutes`}`,
+        `Heads up — your ${vehicleNoun()} reaches ${titleCase(feature.properties.name)} soon. Time to head to the stop.`
       );
-      // Re-arm after it passes, so the next vehicle also alerts.
-      window.setTimeout(() => {
-        const a = state.stopAlerts.get(stopId);
-        if (a) a.fired = false;
-      }, 5 * 60 * 1000);
+      updateStopPopups();
+      renderRouteDetails();
     }
   }
 }
@@ -1346,6 +1365,9 @@ function stopPopup(feature) {
       ${upcoming.length ? `<span>Timetable ${escapeHtml(upcoming.map(formatClock).join(" · "))} MYT</span>` : ""}
       ${props.accessible === true ? `<span>Step-free access</span>` : ""}
     </div>
+    <button type="button" class="popup-remind${state.stopAlerts.has(String(props.stopId)) ? " on" : ""}" data-alert-stop="${escapeHtml(String(props.stopId))}">
+      ${state.stopAlerts.has(String(props.stopId)) ? "\u2713 Reminder set" : "\ud83d\udd14 Remind me (10 min before)"}
+    </button>
   `;
 }
 
@@ -3053,6 +3075,14 @@ map.on("moveend", scheduleArrowRedraw);
 map.on("dragstart", () => {
   if (state.followVehicles) {
     setFollow(false);
+  }
+});
+
+document.addEventListener("click", (event) => {
+  const remind = event.target.closest(".popup-remind[data-alert-stop]");
+  if (remind) {
+    event.stopPropagation();
+    toggleStopAlert(remind.dataset.alertStop);
   }
 });
 
