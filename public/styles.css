@@ -2453,6 +2453,24 @@ body.mode-rail .legend-rail {
   color: #04120a;
 }
 
+.jp-bell {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-btn);
+  color: var(--ink-2);
+  cursor: pointer;
+  display: flex;
+  flex: 0 0 52px;
+  justify-content: center;
+}
+
+.jp-bell.on {
+  background: color-mix(in srgb, var(--live) 18%, transparent);
+  border-color: var(--live);
+  color: var(--live);
+}
+
 .jp-share {
   background: transparent;
   border: 1px solid var(--edge-strong);
