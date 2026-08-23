@@ -62,6 +62,25 @@
       return true;
     },
 
+    /** Schedule a notification for a future moment (survives app close on
+        Android). Returns false when scheduling is unavailable. */
+    async notifyAt(id, title, body, atDate) {
+      if (!LocalNotifications) return false;
+      const permission = await LocalNotifications.checkPermissions();
+      if (permission.display !== "granted") {
+        const asked = await LocalNotifications.requestPermissions();
+        if (asked.display !== "granted") return false;
+      }
+      await LocalNotifications.schedule({
+        notifications: [{ id, title, body, schedule: { at: atDate }, autoCancel: true }]
+      });
+      return true;
+    },
+
+    async cancelScheduled(ids) {
+      await LocalNotifications?.cancel({ notifications: ids.map((id) => ({ id })) }).catch(() => {});
+    },
+
     /** Registers with FCM and returns the device token, or null. */
     async registerPush() {
       if (!PushNotifications) return null;
@@ -135,6 +154,6 @@
     }
   };
 
-  // Ask once on launch so a later alert is not blocked behind a prompt.
-  LocalNotifications?.requestPermissions?.().catch(() => {});
+  // Permission is requested only when the user turns reminders on —
+  // an app that begs for notifications at first launch has already lost.
 })();

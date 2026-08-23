@@ -55,6 +55,10 @@ const state = {
     nativeWatchId: null,
     tracking: false,
     marker: null,
+    reminders: false,
+    reminderTimers: [],
+    speedSamples: [],
+    notified3min: false,
     mapStops: [],
     progressLines: [],
     alerted: false
@@ -3011,6 +3015,11 @@ routeDetails.addEventListener("click", (event) => {
     return;
   }
 
+  if (event.target.closest('[data-action="remind"]')) {
+    toggleReminders();
+    return;
+  }
+
   const tab = event.target.closest(".tab");
   if (tab) {
     state.detailsTab = tab.dataset.tab;
@@ -3603,6 +3612,13 @@ function renderJourneySteps(journey) {
       <ol class="tl">${rows.map(renderTimelineRow).join("")}</ol>
     </div>
     <div class="jp-actions">
+      <button type="button" class="jp-bell${state.journey.reminders ? " on" : ""}" data-action="remind"
+              title="Remind me 10 and 5 minutes before departure" aria-pressed="${state.journey.reminders}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 3a6 6 0 0 0-6 6v3.2l-1.6 3a1 1 0 0 0 .9 1.5h13.4a1 1 0 0 0 .9-1.5l-1.6-3V9a6 6 0 0 0-6-6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+          <path d="M10 19.5a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+      </button>
       <button type="button" class="jp-go jp-start${state.journey.tracking ? " on" : ""}" data-action="track"
               ${alightStop ? `title="Alerts before ${escapeHtml(titleCase(alightStop.name))}"` : ""}>
         ${state.journey.tracking ? "Stop" : "Start"}
@@ -3796,6 +3812,78 @@ function updateMapProgress(lat, lon) {
   }
 }
 
+/* Journey reminders — strictly opt-in via the bell. Two before departure
+   ("your bus is on the way") and one near the stop, from live movement. */
+const REMINDER_IDS = [9101, 9102];
+
+function clearJourneyReminders() {
+  for (const timer of state.journey.reminderTimers ?? []) window.clearTimeout(timer);
+  state.journey.reminderTimers = [];
+  window.RapidBusNative?.cancelScheduled?.(REMINDER_IDS);
+}
+
+async function ensureNotifyPermission() {
+  const native = window.RapidBusNative;
+  if (native?.isNative) return true; // the bridge asks on first schedule
+  if (!("Notification" in window)) return false;
+  if (Notification.permission === "granted") return true;
+  if (Notification.permission === "denied") return false;
+  return (await Notification.requestPermission()) === "granted";
+}
+
+function firstRide(journey) {
+  return journey?.legs.find((leg) => leg.kind === "ride") ?? null;
+}
+
+async function scheduleJourneyReminders(journey) {
+  clearJourneyReminders();
+  const ride = firstRide(journey);
+  if (!ride) return false;
+  if (!(await ensureNotifyPermission())) return false;
+
+  const [h, m] = ride.departure.split(":").map(Number);
+  const departure = new Date();
+  departure.setHours(h, m, 0, 0);
+  if (departure.getTime() < Date.now() - 60000) return false; // already left
+
+  const mode = ride.mode === "rail" ? "train" : "bus";
+  const plans = [
+    [10, REMINDER_IDS[0], `Your ${mode} is on the way`, `${ride.routeName} leaves ${titleCase(ride.from.name)} at ${ride.departure} — 10 minutes`],
+    [5, REMINDER_IDS[1], `5 minutes — time to go`, `${ride.routeName} leaves at ${ride.departure} from ${titleCase(ride.from.name)}`]
+  ];
+
+  const native = window.RapidBusNative;
+  let scheduled = 0;
+  for (const [minsBefore, id, title, body] of plans) {
+    const at = new Date(departure.getTime() - minsBefore * 60000);
+    if (at.getTime() <= Date.now()) continue;
+    if (native?.isNative && native.notifyAt) {
+      if (await native.notifyAt(id, title, body, at)) scheduled++;
+    } else {
+      state.journey.reminderTimers.push(
+        window.setTimeout(() => window.RapidBusNative?.notify(title, body), at.getTime() - Date.now())
+      );
+      scheduled++;
+    }
+  }
+  return scheduled > 0;
+}
+
+async function toggleReminders() {
+  const journey = state.journey.results[state.journey.selected];
+  if (!journey) return;
+  if (state.journey.reminders) {
+    state.journey.reminders = false;
+    clearJourneyReminders();
+    setStatus("Reminders off", "idle");
+  } else {
+    const ok = await scheduleJourneyReminders(journey);
+    state.journey.reminders = ok;
+    setStatus(ok ? "Will remind you before departure" : "Reminders unavailable", ok ? "live" : "error");
+  }
+  renderJourneySteps(journey);
+}
+
 function startJourneyTracking() {
   const journey = state.journey.results[state.journey.selected];
   if (!journey || !navigator.geolocation) {
@@ -3804,6 +3892,9 @@ function startJourneyTracking() {
 
   state.journey.tracking = true;
   state.journey.alerted = false;
+  state.journey.notified3min = false;
+  state.journey.speedSamples = [];
+  state.journey.lastFix = null;
 
   /* In the Android app the native watcher runs a foreground service, so
      tracking keeps working with the screen off. In a browser the standard
@@ -3920,6 +4011,37 @@ function updateJourneyProgress(lat, lon) {
   );
 
   updateMapProgress(lat, lon);
+
+  /* "Your stop is in ~3 minutes": speed from the last few fixes gives an
+     honest short-horizon ETA — better than a fixed radius, which fires late
+     on a highway and early in a jam. */
+  const previous = state.journey.lastFix;
+  state.journey.lastFix = { lat, lon, at: Date.now() };
+  if (previous) {
+    const dt = (Date.now() - previous.at) / 1000;
+    if (dt > 2) {
+      const speed = haversineMeters(previous.lat, previous.lon, lat, lon) / dt; // m/s
+      state.journey.speedSamples.push(speed);
+      if (state.journey.speedSamples.length > 5) state.journey.speedSamples.shift();
+    }
+  }
+  const journeyNow = state.journey.results[state.journey.selected];
+  const alight = alightStopOf(journeyNow);
+  if (alight && !state.journey.notified3min && state.journey.speedSamples.length >= 3) {
+    const avgSpeed = state.journey.speedSamples.reduce((a, b) => a + b, 0) / state.journey.speedSamples.length;
+    if (avgSpeed > 2) { // actually moving, not standing at a platform
+      const metersLeft = haversineMeters(lat, lon, alight.lat, alight.lon);
+      const etaMin = metersLeft / avgSpeed / 60;
+      if (etaMin <= 3) {
+        state.journey.notified3min = true;
+        window.RapidBusNative?.notify(
+          `Your stop is in about 3 minutes`,
+          `${titleCase(alight.name)} coming up — get ready.`
+        );
+        setStatus("Stop in ~3 min", "live");
+      }
+    }
+  }
 
   // The alight stop is the end of the last ride; alert once when it is close.
   const journey = state.journey.results[state.journey.selected];
