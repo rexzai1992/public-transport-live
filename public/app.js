@@ -66,7 +66,8 @@ const state = {
   }
 };
 
-const LIVE_REFRESH_MS = 30000;
+const LIVE_REFRESH_MS = 30000;           // active: buses moving on the route
+const LIVE_REFRESH_IDLE_MS = 60000;      // quiet: no live vehicles right now
 const MARKER_ANIMATION_MS = 1200;
 const RECENT_KEY = "rapidbus.recentRoutes";
 const REGION_KEY = "rapidbus.region";
@@ -1068,18 +1069,33 @@ function clearLayer(key) {
   }
 }
 
+/* Adaptive polling: 30s while vehicles are actually running the route, 60s
+   when none are live (early morning, off-hours, timetable-only feeds). Halves
+   the network wake-ups on quiet routes for no visible cost, since there is
+   nothing moving to update anyway. Self-scheduling so the cadence can change
+   between ticks. */
+function liveCadenceMs() {
+  return state.live && (state.currentStats?.vehicles ?? 0) > 0 ? LIVE_REFRESH_MS : LIVE_REFRESH_IDLE_MS;
+}
+
+function scheduleLiveTick() {
+  state.nextRefreshAt = Date.now() + liveCadenceMs();
+  state.liveTimer = window.setTimeout(async () => {
+    await refreshVehicles().catch(showError);
+    if (state.activeRouteId) scheduleLiveTick();
+  }, liveCadenceMs());
+}
+
 function startLiveRefresh() {
   refreshVehicles().catch(showError);
-  state.liveTimer = window.setInterval(() => {
-    refreshVehicles().catch(showError);
-  }, LIVE_REFRESH_MS);
+  scheduleLiveTick();
   state.countdownTimer = window.setInterval(renderLiveStatus, 1000);
   renderLiveStatus();
 }
 
 function stopLiveRefresh() {
   if (state.liveTimer) {
-    window.clearInterval(state.liveTimer);
+    window.clearTimeout(state.liveTimer);
     state.liveTimer = null;
   }
   if (state.countdownTimer) {
@@ -1179,7 +1195,7 @@ async function refreshVehicles() {
   state.currentVehicles = features;
   state.currentStats.vehicles = features.length;
   state.currentStats.avgSpeed = averageSpeed(features);
-  state.nextRefreshAt = Date.now() + LIVE_REFRESH_MS;
+  // nextRefreshAt is set by scheduleLiveTick, which knows the adaptive delay.
   updateVehicleMarkers(features, { fitToVehicles: state.followVehicles });
   updateStopPopups();
   checkStopAlerts();
@@ -4625,7 +4641,7 @@ function compactCount(n) {
 let alertPollTimer = null;
 
 function pauseBackgroundWork() {
-  if (state.liveTimer) { window.clearInterval(state.liveTimer); state.liveTimer = null; }
+  if (state.liveTimer) { window.clearTimeout(state.liveTimer); state.liveTimer = null; }
   if (state.countdownTimer) { window.clearInterval(state.countdownTimer); state.countdownTimer = null; }
   if (flightState.timer) { window.clearInterval(flightState.timer); flightState.timer = null; }
   if (alertPollTimer) { window.clearInterval(alertPollTimer); alertPollTimer = null; }
@@ -4635,7 +4651,7 @@ function resumeBackgroundWork() {
   // Live vehicle polling resumes only if a route is open.
   if (state.activeRouteId && !state.liveTimer) {
     refreshVehicles().catch(() => {});
-    state.liveTimer = window.setInterval(() => refreshVehicles().catch(() => {}), LIVE_REFRESH_MS);
+    scheduleLiveTick();
     state.countdownTimer = window.setInterval(renderLiveStatus, 1000);
   }
   // Flights resume only if the layer was on.
