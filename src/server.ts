@@ -3,7 +3,8 @@ import rateLimit from "express-rate-limit";
 import morgan from "morgan";
 import path from "node:path";
 import { ZodError } from "zod";
-import { apiRouter } from "./routes.js";
+import { apiRouter, adminStats, DEFAULT_JOURNEY_FEEDS } from "./routes.js";
+import { timingSafeEqual } from "node:crypto";
 import { UpstreamError } from "./http.js";
 
 const app = express();
@@ -88,6 +89,81 @@ app.use((req, res, next) => {
   next();
 });
 
+/* Admin panel: aggregate usage numbers behind Basic auth. Off entirely (404)
+   until ADMIN_PASS is set, so a forgotten env var fails closed, not open. */
+function requireAdmin(req: express.Request, res: express.Response): boolean {
+  const pass = process.env.ADMIN_PASS;
+  if (!pass) {
+    res.status(404).end();
+    return false;
+  }
+  const header = req.headers.authorization ?? "";
+  const expected = `Basic ${Buffer.from(`admin:${pass}`).toString("base64")}`;
+  const a = Buffer.from(header);
+  const b = Buffer.from(expected);
+  const ok = a.length === b.length && timingSafeEqual(a, b);
+  if (!ok) {
+    res.setHeader("WWW-Authenticate", 'Basic realm="admin"');
+    res.status(401).end();
+    return false;
+  }
+  return true;
+}
+
+app.get("/my-admin/data", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.setHeader("Cache-Control", "no-store");
+  res.json(adminStats());
+});
+
+app.get("/my-admin", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.setHeader("Cache-Control", "no-store");
+  res.type("html").send(ADMIN_HTML);
+});
+
+const ADMIN_HTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PT Live — Admin</title>
+<style>
+:root { --bg:#f5f6f8; --card:#fff; --ink:#16202c; --ink2:#5b6b7d; --rule:#e3e8ee; --bar:#2563eb; }
+@media (prefers-color-scheme: dark){ :root { --bg:#0a1018; --card:#111825; --ink:#e8f0fa; --ink2:#a9c1dd; --rule:#22304a; --bar:#7cc4ff; } }
+*{box-sizing:border-box} body{background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif;margin:0;padding:24px}
+h1{font-size:20px;margin:0 0 4px} .sub{color:var(--ink2);font-size:12.5px;margin:0 0 20px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:20px}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:14px 16px}
+.card b{display:block;font-size:24px;font-variant-numeric:tabular-nums}
+.card span{color:var(--ink2);font-size:12px}
+h2{font-size:14px;margin:22px 0 10px}
+.bars{align-items:flex-end;background:var(--card);border:1px solid var(--rule);border-radius:12px;display:flex;gap:3px;height:120px;padding:12px}
+.bars div{background:var(--bar);border-radius:3px 3px 0 0;flex:1;min-height:2px;position:relative}
+.bars div:hover::after{background:var(--ink);border-radius:6px;bottom:calc(100% + 4px);color:var(--bg);content:attr(data-t);font-size:10.5px;left:50%;padding:2px 7px;position:absolute;transform:translateX(-50%);white-space:nowrap}
+table{border-collapse:collapse;width:100%;background:var(--card);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+td,th{border-top:1px solid var(--rule);font-size:13px;padding:8px 14px;text-align:left}
+th{border:0;color:var(--ink2);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+td:last-child{font-variant-numeric:tabular-nums;text-align:right}
+</style></head><body>
+<h1>Public Transport Live</h1><p class="sub" id="sub">Loading\u2026</p>
+<div class="grid" id="cards"></div>
+<h2>Visits \u2014 last 30 days</h2><div class="bars" id="bars"></div>
+<h2>Most opened routes</h2><table id="routes"><tr><th>Route</th><th>Opens</th></tr></table>
+<script>
+fetch("/my-admin/data").then((r)=>r.json()).then((d)=>{
+  const days=Object.entries(d.days).sort((a,b)=>a[0]<b[0]?-1:1).slice(-30);
+  const t=d.today;
+  document.getElementById("sub").textContent=
+    "tracking since "+d.startedTracking+" \u00b7 uptime "+Math.floor(d.uptimeSeconds/3600)+"h "+Math.floor(d.uptimeSeconds%3600/60)+"m \u00b7 rss "+d.memoryMb+" MB";
+  const cards=[["Total visits",d.visits],["Visits today",t.visits],["API calls today",t.api],
+    ["Routes opened today",t.routeViews],["Journeys today",t.journeys],["Nearby today",t.nearby],["Flight loads today",t.flights]];
+  document.getElementById("cards").innerHTML=cards.map(([k,v])=>"<div class=card><b>"+v.toLocaleString()+"</b><span>"+k+"</span></div>").join("");
+  const max=Math.max(1,...days.map(([,v])=>v.visits));
+  document.getElementById("bars").innerHTML=days.map(([k,v])=>
+    "<div style=height:"+Math.max(2,Math.round(v.visits/max*100))+"% data-t='"+k.slice(5)+": "+v.visits+"'></div>").join("")||"<span style=color:var(--ink2);font-size:12px>no days yet</span>";
+  document.getElementById("routes").insertAdjacentHTML("beforeend",
+    d.topRoutes.map((r)=>"<tr><td>"+r.key+"</td><td>"+r.count+"</td></tr>").join("")||"<tr><td colspan=2>none yet</td></tr>");
+});
+</script></body></html>`;
+
 app.use(express.static(path.join(process.cwd(), "public")));
 
 app.get("/health", (_req, res) => {
@@ -122,4 +198,29 @@ app.use(errorHandler);
 
 app.listen(port, host, () => {
   console.log(`Rapid Bus Maps Handler listening on http://${host}:${port}`);
+  primeJourneyNetwork();
 });
+
+/* Building the journey network means fetching and parsing every default feed —
+   sixteen of them now — which measured 26 seconds cold against 0.6 warm. Left
+   lazy, that whole cost lands on whoever happens to make the first journey
+   request after a restart or the daily rollover, and 26 seconds of spinner is
+   indistinguishable from a broken app.
+
+   So it is built at boot instead, in the background: the server is already
+   serving routes and vehicles while this runs, and a failure only means the
+   first real request rebuilds it the old way. Nothing depends on it finishing. */
+function primeJourneyNetwork(): void {
+  const started = Date.now();
+  import("./journey.js")
+    .then(({ getNetwork }) => getNetwork(DEFAULT_JOURNEY_FEEDS))
+    .then((network) => {
+      console.log(
+        `[journey] network ready in ${((Date.now() - started) / 1000).toFixed(1)}s ` +
+          `(${network.stops.size} stops, ${network.patterns.length} patterns)`
+      );
+    })
+    .catch((error) => {
+      console.warn("[journey] priming failed, will build on first request:", error?.message ?? error);
+    });
+}

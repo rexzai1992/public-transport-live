@@ -13,10 +13,11 @@ import {
   vehicleBelongsToRoute
 } from "./gtfsStatic.js";
 import { buildRouteStopSchedule, malaysiaClock, withNextDepartures } from "./schedule.js";
-import { planJourney, searchStops, nearbyDepartures } from "./journey.js";
+import { planJourney, searchStops, nearbyDepartures, stopBoard } from "./journey.js";
 import { getSgStopArrivals } from "./sg/vehicles.js";
 import { getTrainAlerts, getPlatformCrowd } from "./sg/datamall.js";
 import { getAircraft, getFlightRoute, findFlight } from "./flights.js";
+import { bumpVisit, bumpApi, bumpDay, bumpRoute, visitTotal, getStats } from "./stats.js";
 import {
   categoryParamSchema,
   journeySchema,
@@ -24,9 +25,18 @@ import {
   mapQuerySchema,
   routeParamSchema,
   routeSearchSchema,
-  vehicleQuerySchema, nearbySchema, sgArrivalSchema, crowdSchema, flightsSchema, flightRouteSchema } from "./validators.js";
+  vehicleQuerySchema, nearbySchema, stopBoardSchema, sgArrivalSchema, crowdSchema, flightsSchema, flightRouteSchema } from "./validators.js";
 
 export const apiRouter = Router();
+
+/* One aggregate tick per API request that reaches the app (nginx's
+   micro-cache answers the rest, which is the point of it). */
+apiRouter.use((req, _res, next) => {
+  if (!req.path.startsWith("/visit") && !req.path.startsWith("/stats")) {
+    bumpApi();
+  }
+  next();
+});
 
 apiRouter.get("/rapid-bus/categories", (_req, res) => {
   res.json({
@@ -116,6 +126,10 @@ apiRouter.get("/rapid-bus/:category/vehicles", async (req, res, next) => {
 });
 
 apiRouter.get("/rapid-bus/:category/map", async (req, res, next) => {
+  bumpDay("routeViews");
+  if (typeof req.query.routeId === "string") {
+    bumpRoute(`${req.params.category}:${req.query.routeId}`);
+  }
   try {
     const { category } = categoryParamSchema.parse(req.params);
     const { routeId, direction } = mapQuerySchema.parse(req.query);
@@ -185,11 +199,26 @@ apiRouter.get("/rapid-bus/:category/map", async (req, res, next) => {
 /* Feeds worth searching for a journey. Bus networks are huge and mostly serve
    first/last mile, so the default is rail plus the KL bus networks; callers can
    narrow or widen it with ?feeds=a,b. */
-const DEFAULT_JOURNEY_FEEDS: FeedId[] = [
+export const DEFAULT_JOURNEY_FEEDS: FeedId[] = [
   "rapid-rail-kl",
   "ktmb",
   "rapid-bus-kl",
   "rapid-bus-mrtfeeder",
+  /* The myBAS / MyBus city networks. Each is geographically disjoint from the
+     others and from KL, so they add nothing to a Klang Valley search — the
+     550 m transfer grid never compares their stops against KL's — but without
+     them a passenger in Johor Bahru or Melaka cannot plan a trip at all, which
+     is the whole point of carrying the feed. */
+  "mybas-johor",
+  "mybas-melaka",
+  "mybas-ipoh",
+  "mybas-seremban-a",
+  "mybas-seremban-b",
+  "mybas-alor-setar",
+  "mybas-kangar",
+  "mybas-kota-bharu",
+  "mybas-kuala-terengganu",
+  "mybas-kuching",
   // The planner drops feeds that fail to load, so Singapore rides along and
   // simply vanishes from planning while LTA_ACCOUNT_KEY is unset (rail works
   // keyless). The two countries never link — no walk transfer spans the causeway.
@@ -218,10 +247,28 @@ apiRouter.get("/stops/search", async (req, res, next) => {
 });
 
 apiRouter.get("/stops/nearby", async (req, res, next) => {
+  bumpDay("nearby");
   try {
     const query = nearbySchema.parse(req.query);
     const stops = await nearbyDepartures(query.lat, query.lon, parseFeeds(query.feeds), query.limit ?? 6);
     res.json({ generatedAt: new Date().toISOString(), stops });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* The full board for one stop: every route that calls there and when. Answers
+   "I am standing here, what can I catch" — which /stops/nearby cannot, because
+   it caps itself at two departures per route across a handful of stops. */
+apiRouter.get("/stops/board", async (req, res, next) => {
+  try {
+    const query = stopBoardSchema.parse(req.query);
+    const board = await stopBoard(query.key, parseFeeds(query.feeds), query.minutes ?? 120);
+    if (!board) {
+      res.status(404).json({ error: "Unknown stop" });
+      return;
+    }
+    res.json({ generatedAt: new Date().toISOString(), ...board });
   } catch (error) {
     next(error);
   }
@@ -258,50 +305,23 @@ apiRouter.get("/rapid-bus/sg-rail/crowd", async (req, res, next) => {
   }
 });
 
-/* Visitor counter: one tick per browsing session (the client guards with
-   sessionStorage). File-backed so restarts keep the number; a plain count,
-   no identities, nothing stored about who visited. */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-
-const STATS_DIR = new URL("../data/", import.meta.url);
-const STATS_FILE = new URL("../data/visits.json", import.meta.url);
-
-let visitTotal = (() => {
-  try {
-    return Number(JSON.parse(readFileSync(STATS_FILE, "utf-8")).visits) || 0;
-  } catch {
-    return 0;
-  }
-})();
-
-let statsWriteQueued = false;
-function persistVisits() {
-  if (statsWriteQueued) return;
-  statsWriteQueued = true;
-  setTimeout(() => {
-    statsWriteQueued = false;
-    try {
-      mkdirSync(STATS_DIR, { recursive: true });
-      writeFileSync(STATS_FILE, JSON.stringify({ visits: visitTotal }));
-    } catch {
-      /* the count survives in memory until the next successful write */
-    }
-  }, 2000);
+/* Visitor counter and usage stats — aggregate numbers only, see stats.ts. */
+export function adminStats() {
+  return getStats();
 }
 
 apiRouter.get("/visit", (_req, res) => {
-  visitTotal += 1;
-  persistVisits();
   res.setHeader("Cache-Control", "no-store");
-  res.json({ visits: visitTotal });
+  res.json({ visits: bumpVisit() });
 });
 
 apiRouter.get("/stats", (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  res.json({ visits: visitTotal });
+  res.json({ visits: visitTotal() });
 });
 
 apiRouter.get("/flights", async (req, res, next) => {
+  bumpDay("flights");
   try {
     const { lat, lon, r } = flightsSchema.parse(req.query);
     res.json({ aircraft: await getAircraft(lat, lon, r) });
@@ -329,6 +349,7 @@ apiRouter.get("/flights/find", async (req, res, next) => {
 });
 
 apiRouter.get("/journey", async (req, res, next) => {
+  bumpDay("journeys");
   try {
     const query = journeySchema.parse(req.query);
 

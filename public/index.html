@@ -90,18 +90,26 @@
             <div id="nearbyList" class="nearby-list"></div>
           </section>
 
-          <section class="block">
+          <!-- Saved only earns a row once something is in it. Empty, it was a
+               heading plus a lone "+" eating 76px of a half-open sheet. The
+               "+" now rides at the end of the mode row instead. -->
+          <section id="savedBlock" class="block hidden">
             <h2 class="cap">Saved</h2>
             <div id="suggestRow" class="chip-row"></div>
           </section>
 
           <section class="block">
-            <div id="modeRow" class="chip-row modes" role="group" aria-label="Filter by mode">
-              <button type="button" class="chip on" data-mode="all">All</button>
-              <button type="button" class="chip" data-mode="bus">Bus</button>
-              <button type="button" class="chip" data-mode="mrt">MRT</button>
-              <button type="button" class="chip" data-mode="lrt">LRT</button>
-              <button type="button" class="chip" data-mode="ktm">KTM</button>
+            <div id="modeRow" class="chip-row modes">
+              <span class="modes-group" role="group" aria-label="Filter by mode">
+                <button type="button" class="chip on" data-mode="all">All</button>
+                <button type="button" class="chip" data-mode="bus">Bus</button>
+                <button type="button" class="chip" data-mode="mrt">MRT</button>
+                <button type="button" class="chip" data-mode="lrt">LRT</button>
+                <button type="button" class="chip" data-mode="ktm">KTM</button>
+              </span>
+              <button id="savedAdd" class="chip add" type="button"
+                      title="Find a route, open it, then tap the star to save it here"
+                      aria-label="Add a saved route">+</button>
             </div>
           </section>
 

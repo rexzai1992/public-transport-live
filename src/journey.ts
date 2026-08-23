@@ -242,12 +242,28 @@ async function buildNetwork(feedIds: FeedId[], clock: MalaysiaClock): Promise<Ne
   const stops = new Map<string, StopRef>();
   const patterns: Pattern[] = [];
 
-  for (const feedId of feedIds) {
-    const feed = await getStaticFeed(feedId).catch(() => null);
+  /* Feeds are FETCHED concurrently and only then folded in, in order.
+
+     This loop used to await each feed in turn, which was tolerable at six feeds
+     and is not at sixteen: the first journey request after the daily rollover
+     paid every download and parse end to end. Pattern building still runs
+     sequentially because it mutates the shared `stops` map, and keeping the
+     order fixed keeps pattern indices stable for a given feed list.
+
+     A feed that fails is skipped, not fatal — one operator having a bad day
+     must not take journey planning down with it. */
+  const { activeServiceIds } = await import("./schedule.js");
+  const loaded = await Promise.all(
+    feedIds.map(async (feedId) => ({
+      feedId,
+      feed: await getStaticFeed(feedId).catch(() => null)
+    }))
+  );
+
+  for (const { feedId, feed } of loaded) {
     if (!feed) {
       continue;
     }
-    const { activeServiceIds } = await import("./schedule.js");
     const active = activeServiceIds(feed, clock);
     patterns.push(...buildPatternsForFeed(feedId, feed, active, stops));
   }
@@ -322,6 +338,14 @@ async function buildNetwork(feedIds: FeedId[], clock: MalaysiaClock): Promise<Ne
   };
 }
 
+/* Builds in flight, keyed exactly like the cache.
+
+   Without this, every request arriving during a cold build started ANOTHER
+   one: measured after a restart, a request 2s in waited 17.5s doing its own
+   full rebuild while the boot prime was already 2s into the identical work.
+   Concurrent callers now await the same build. */
+const networkBuilds = new Map<string, Promise<Network>>();
+
 export async function getNetwork(feedIds: FeedId[]): Promise<Network> {
   const clock = malaysiaClock();
   const cacheKey = `${[...feedIds].sort().join(",")}|${clock.date}`;
@@ -329,9 +353,24 @@ export async function getNetwork(feedIds: FeedId[]): Promise<Network> {
   if (cached && Date.now() - cached.builtAt < NETWORK_TTL_MS) {
     return cached;
   }
-  const network = await buildNetwork(feedIds, clock);
-  networkCache.set(cacheKey, network);
-  return network;
+
+  const inFlight = networkBuilds.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const build = buildNetwork(feedIds, clock)
+    .then((network) => {
+      networkCache.set(cacheKey, network);
+      return network;
+    })
+    .finally(() => {
+      // Failures must not be cached as "still building" forever.
+      networkBuilds.delete(cacheKey);
+    });
+
+  networkBuilds.set(cacheKey, build);
+  return build;
 }
 
 /* ------------------------------- planning ------------------------------- */
@@ -790,6 +829,108 @@ export async function nearbyDepartures(
   }
 
   return result;
+}
+
+export type StopRouteDeparture = {
+  feed: FeedId;
+  routeId: string;
+  route: string;
+  routeColor?: string;
+  headsign?: string;
+  directionId?: string;
+  /** Where this actually goes. Most Malaysian feeds ship no trip_headsign, so
+      it falls back to the pattern's final stop — the honest answer, and the one
+      that keeps two directions of the same route apart on screen. */
+  towards: string;
+  mode: "bus" | "rail";
+  /** Minutes from now, ascending. Empty means it serves the stop but has
+      nothing left today — worth showing, because "no more buses" is an answer
+      the commuter needs as much as "4 minutes". */
+  times: number[];
+};
+
+export type StopBoard = {
+  stop: StopRef;
+  routes: StopRouteDeparture[];
+};
+
+/** Everything that calls at one stop. `nearbyDepartures` deliberately caps
+    itself at two departures per route so a frequent service cannot drown the
+    list, which makes it the wrong answer for "what can I catch from HERE" —
+    this is the full board, one entry per route and direction. */
+export async function stopBoard(
+  key: string,
+  feeds: FeedId[],
+  horizonMinutes = 120
+): Promise<StopBoard | null> {
+  const network = await getNetwork(feeds);
+  const stop = network.stops.get(key);
+  if (!stop) {
+    return null;
+  }
+
+  const now = malaysiaClock().minutes;
+  const byRoute = new Map<string, StopRouteDeparture>();
+
+  for (const patternIndex of network.patternsByStop.get(key) ?? []) {
+    const pattern = network.patterns[patternIndex];
+    const at = pattern.stopKeys.indexOf(key);
+    if (at < 0) continue;
+
+    /* Direction is part of the identity: "towards Gombak" and "towards Putra
+       Heights" are the same route but not the same thing to stand and wait for.
+
+       Grouping on DESTINATION rather than direction_id matters: several feeds
+       express one direction as a handful of patterns, which grouped by id
+       produced rows that were indistinguishable on screen — the same route and
+       the same terminus listed four times, looking like a bug. */
+    const last = pattern.stopKeys[pattern.stopKeys.length - 1];
+    /* Rapid Rail writes headsigns as "From Gombak to Putra Heights". Prefixed
+       with an arrow that reads "-> From Gombak To Putra Heights", which names
+       the wrong end first. Only the part after "to" is the destination. */
+    const raw = pattern.headsign ?? network.stops.get(last)?.name ?? pattern.routeName;
+    const towards = raw.replace(/^\s*from\s+.+?\s+to\s+/i, "").trim() || raw;
+    const id = `${pattern.feed}:${pattern.routeId}:${towards}`;
+    let entry = byRoute.get(id);
+    if (!entry) {
+      entry = {
+        feed: pattern.feed,
+        routeId: pattern.routeId,
+        route: pattern.routeName,
+        routeColor: pattern.routeColor,
+        headsign: pattern.headsign,
+        directionId: pattern.directionId,
+        towards,
+        mode: pattern.mode,
+        times: []
+      };
+      byRoute.set(id, entry);
+    }
+
+    for (const trip of pattern.trips) {
+      const dep = trip.start + trip.offsets[at];
+      if (dep < now || dep > now + horizonMinutes) continue;
+      entry.times.push(dep - now);
+    }
+  }
+
+  const routes = [...byRoute.values()];
+  for (const entry of routes) {
+    /* Merged patterns can publish the same minute twice; "8 min · 8 min" reads
+       as a fault rather than as two vehicles. */
+    entry.times = [...new Set(entry.times)].sort((a, b) => a - b).slice(0, 4);
+  }
+
+  /* Soonest first; routes with nothing left sink to the bottom rather than
+     vanishing, and rail outranks bus on a tie the way the search does. */
+  routes.sort(
+    (a, b) =>
+      (a.times[0] ?? Infinity) - (b.times[0] ?? Infinity) ||
+      Number(a.mode === "bus") - Number(b.mode === "bus") ||
+      a.route.localeCompare(b.route, undefined, { numeric: true })
+  );
+
+  return { stop, routes };
 }
 
 /** Free-text stop lookup, for choosing a destination by name. */

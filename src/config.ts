@@ -34,6 +34,31 @@ const prasaranaStatic = (category: string) =>
 const prasaranaRealtime = (category: string) =>
   `${DATA_GOV_BASE_URL}/gtfs-realtime/vehicle-position/prasarana?category=${category}`;
 
+/* APAD's stage-bus networks outside the Klang Valley. The API takes a city, and
+   asking for an invalid one makes it list the valid set itself:
+     ['alor-setar', 'ipoh', 'johor', 'kangar', 'kuala-terengganu',
+      'kota-bharu', 'kuching', 'melaka', 'seremban-a', 'seremban-b']
+   Static redirects to S3; realtime redirects to a trailing slash. Both are
+   followed by default, so the plain URLs are kept for readability.
+
+   Branding varies by concession — agency.txt says "BAS.MY-JohorBahru" in Johor
+   and Melaka, "THE COMBINE BUS MYBUS" in Ipoh, "MYBUS KR TRAVEL" and
+   "MYBUS GOPI TRAVEL" in Seremban, and the operator's own name elsewhere. They
+   are labelled by CITY under the API's own umbrella name, because the city is
+   what a passenger knows and the operator is not. */
+const mybasStatic = (city: string) => `${DATA_GOV_BASE_URL}/gtfs-static/mybas-${city}`;
+const mybasRealtime = (city: string) =>
+  `${DATA_GOV_BASE_URL}/gtfs-realtime/vehicle-position/mybas-${city}`;
+
+const mybas = (city: string, label: string, short: string) =>
+  ({
+    label,
+    short,
+    mode: "bus",
+    staticUrl: mybasStatic(city),
+    realtimeUrl: mybasRealtime(city)
+  }) satisfies FeedDefinition;
+
 /* Every feed the app can serve. Rapid Rail publishes static timetables but no
    vehicle positions — the realtime endpoint 404s — so its realtimeUrl is null
    and the UI presents it as timetable-only rather than as a route with no
@@ -78,6 +103,24 @@ export const FEEDS = {
     staticUrl: `${DATA_GOV_BASE_URL}/gtfs-static/ktmb`,
     realtimeUrl: `${DATA_GOV_BASE_URL}/gtfs-realtime/vehicle-position/ktmb`
   },
+  /* myBAS / BAS.MY / MyBus — ten city networks, every one publishing both a
+     full static feed (routes, stops, trips, shapes, calendar) and live vehicle
+     positions. Verified against the live API rather than the docs: 136 routes,
+     8,530 stops and 332 vehicles reporting within ~70 seconds.
+
+     agency.txt gives Asia/Singapore for Johor and Asia/Kuala_Lumpur elsewhere;
+     both are UTC+8, so malaysiaClock() is right for all of them. */
+  "mybas-johor": mybas("johor", "myBAS Johor Bahru", "Johor"),
+  "mybas-melaka": mybas("melaka", "myBAS Melaka", "Melaka"),
+  "mybas-ipoh": mybas("ipoh", "MyBus Ipoh", "Ipoh"),
+  "mybas-seremban-a": mybas("seremban-a", "MyBus Seremban A", "Sbn A"),
+  "mybas-seremban-b": mybas("seremban-b", "MyBus Seremban B", "Sbn B"),
+  "mybas-alor-setar": mybas("alor-setar", "myBAS Alor Setar", "Alor Setar"),
+  "mybas-kangar": mybas("kangar", "myBAS Kangar", "Kangar"),
+  "mybas-kota-bharu": mybas("kota-bharu", "myBAS Kota Bharu", "Kota Bharu"),
+  "mybas-kuala-terengganu": mybas("kuala-terengganu", "myBAS Kuala Terengganu", "K Terengganu"),
+  "mybas-kuching": mybas("kuching", "myBAS Kuching", "Kuching"),
+
   /* Singapore: no GTFS upstream. The "sg:" URLs are sentinels — getStaticFeed
      and getVehiclePositions branch to the DataMall adapters in src/sg/ before
      any URL is fetched. Rail needs no API key (curated network, official

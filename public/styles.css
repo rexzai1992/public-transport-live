@@ -456,14 +456,41 @@ kbd {
   color: var(--ink-2);
 }
 
-/* Mode filter: one row, evenly spread. */
+/* Mode filter: one row, evenly spread, with the save-a-route "+" pinned at the
+   end. Sharing this row is what let the Saved block disappear when empty. */
 .chip-row.modes {
+  align-items: center;
   display: flex;
+  flex-wrap: nowrap;
 }
 
-.chip-row.modes .chip {
-  flex: 1;
+.modes-group {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 6px;
+  min-width: 0;
+}
+
+.modes-group .chip {
+  flex: 1 1 0;
   justify-content: center;
+  min-width: 0;
+  padding: 0 6px;
+}
+
+/* The "+" keeps its own width instead of claiming a sixth of the row. */
+.chip-row.modes .chip.add {
+  flex: 0 0 auto;
+}
+
+/* A live query owns the panel: the results start directly under the search box
+   rather than below Nearby, Saved and Recent. The journey planner's From/To
+   suggestions get the same courtesy from Recent trips. */
+body.searching #nearbyBlock,
+body.searching #savedBlock,
+body.searching #recentBlock,
+body.jp-searching #jpRecentBlock {
+  display: none;
 }
 
 /* The planner has its own From/To; the route search bar is hidden there. */
@@ -760,6 +787,15 @@ body.view-journey .search {
 .detail-fixed {
   display: flex;
   flex-direction: column;
+  flex: none;
+}
+
+/* The tabs and list title sit beside .detail-fixed rather than inside it, so
+   their sticky containing block is the scrolling pane. As flex items of that
+   column they must not be shrinkable, or the pinned bar loses height. */
+.detail-body > .tabs,
+.detail-body > .list-title,
+.detail-body > .notice {
   flex: none;
 }
 
@@ -2496,6 +2532,87 @@ body.mode-rail .legend-rail {
   color: var(--live);
 }
 
+/* The stop board: every route that calls at a nearby stop, opened by tapping
+   the stop. Rows with hairline separators, no per-row cards — same language as
+   the route list, so it reads as one product rather than a bolted-on panel. */
+.stop-board {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+
+.stop-board.hidden {
+  display: none;
+}
+
+.stop-board-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--rule);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-family: inherit;
+  gap: var(--sp-3);
+  padding: 9px 0;
+  text-align: left;
+  width: 100%;
+}
+
+.stop-board-row:hover {
+  background: var(--hover);
+}
+
+.stop-board-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stop-board-to {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stop-board-when {
+  color: var(--ink-2);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stop-board-when.dim {
+  color: var(--ink-3);
+}
+
+.stop-board-note {
+  color: var(--ink-3);
+  font-size: 12px;
+  padding: 8px 0 2px;
+}
+
+.badge.small {
+  font-size: 11.5px;
+  height: 24px;
+  min-width: 36px;
+  padding: 0 6px;
+}
+
+/* Comfortable to hit with a thumb; the row is the tap target, not the badge. */
+@media (max-width: 1100px) {
+  .stop-board-row {
+    padding: 11px 0;
+  }
+
+  .nearby-stop-head {
+    min-height: 34px;
+  }
+}
+
 /* Disruption strip: pinned above everything in the sheet. */
 .alert-strip {
   background: color-mix(in srgb, #d64545 18%, var(--glass-raised));
@@ -3002,18 +3119,26 @@ html[data-theme="dark"] .map-btn.discover {
     position: sticky;
     top: 0;
     z-index: 3;
-    /* Bleed to the panel edges so nothing shows through behind it. */
-    margin: 14px 0 0;
-    padding: 3px var(--sp-5);
+    /* Bleed to the panel edges so nothing shows through behind it. A sticky
+       element is pinned by its MARGIN edge, so a top margin here is a
+       transparent band above the tabs that scrolling rows show through. It has
+       to be padding — inside the painted background — not margin. */
+    margin: 0;
+    padding: 14px var(--sp-5) 3px;
     border-left: 0;
     border-right: 0;
     border-radius: 0;
   }
 
+  /* Pins directly below the tabs, so this offset must equal their rendered
+     height: 63px, measured (14 padding + 44 touch-target .tab + 3 + hairline).
+     Both are direct children of the scrolling pane now — inside .detail-fixed
+     the sticky could not outlive its containing block and simply scrolled away.
+     If the tabs' padding or .tab height changes, this number changes with it. */
   .list-title {
     background: var(--page);
     position: sticky;
-    top: 44px;
+    top: 63px;
     z-index: 2;
   }
 
@@ -3131,50 +3256,59 @@ html[data-theme="dark"] .map-btn.discover {
 --------------------------------------------------------------------------- */
 
 @media (max-width: 1100px) {
-  /* The rail is a column here, so the discover pane must TAKE the sheet height
-     rather than size to its content. Left as flex:none it grew to 3711px and
-     the route list was simply clipped by the sheet — no scrolling at all. */
+  /* ------------------------------------------------------------------------
+     One scroller for the whole sheet body.
+     ------------------------------------------------------------------------
+     The inner scrollers (#routesView, #journeyView) were the wrong level: the
+     rows above them — brand, tabs, search, filter chips — stayed pinned and on
+     a half-open sheet ate the entire height, so the list they wrapped had
+     nothing left to scroll. Now `.discover` itself scrolls and EVERYTHING
+     below the tabs moves with one drag, in Routes and Plan a journey alike.
+     The tabs stay put (see the sticky `.tabs` rule above) so you can still
+     switch views from anywhere in the scroll.
+  --------------------------------------------------------------------------- */
   .discover {
     flex: 1 1 auto;
     min-height: 0;
-  }
-
-  body.has-journey .discover {
-    flex: 0 0 auto;
-  }
-
-  /* The list used to be the scroller, which worked when almost nothing sat
-     above it. Saved, mode and recent chips now do, they are all pinned, and on
-     a half-open sheet they consumed the full height: the list was left a
-     ~10px sliver with a scrollbar — "cannot slide". So on phones the whole
-     routes view scrolls as one, the same treatment the detail pane already
-     got, and the chip blocks scroll away instead of squeezing the list. */
-  #routesView {
-    -webkit-overflow-scrolling: touch;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
     touch-action: pan-y;
+    /* `top: 0` on a sticky child resolves against this box's PADDING edge, so
+       a padding-top here is another transparent band above the pinned tabs.
+       The breathing room moves to .brand, which scrolls away with the rest. */
+    padding-top: 0;
   }
 
-  /* The journey pane had the same squeeze: pinned From/To/Leave/button left
-     the results a sliver — plan a trip and "nothing happens" because the
-     answer rendered into 10 unscrollable pixels. One scroll here too. */
+  .brand {
+    padding-top: var(--sp-5);
+  }
+
+  /* No `body.has-journey .discover` override here on purpose. That state has
+     its own working design further up the file — the RAIL scrolls and every
+     inner box sizes to its content — and a same-specificity rule down here
+     would quietly win on file order and undo it. */
+
+  /* The wrappers stop being scrollers — their parent owns it now. Nested
+     scrollers here are what made a drag land on whichever one the finger
+     happened to be over. */
+  #routesView,
   #journeyView {
-    -webkit-overflow-scrolling: touch;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    touch-action: pan-y;
-  }
-
-  .jp-output {
     flex: none;
+    min-height: 0;
     overflow: visible;
   }
 
+  .jp-output,
   .routes {
     flex: none;
     overflow: visible;
+  }
+
+  /* The footer scrolls away with the rest instead of holding a permanent strip
+     of the sheet for a credit line. */
+  .rail-foot {
+    flex: none;
   }
 
   /* With 44px controls the status bar no longer fits 360px, so the label gives

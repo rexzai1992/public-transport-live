@@ -48,6 +48,14 @@ export const nearbySchema = z.object({
   limit: z.coerce.number().int().min(1).max(10).optional()
 });
 
+/* A stop key is "<feed>:<stopId>"; stop ids vary wildly across feeds, so the
+   shape is checked loosely and the lookup itself decides if it exists. */
+export const stopBoardSchema = z.object({
+  key: z.string().trim().min(3).max(120).regex(/^[A-Za-z0-9-]+:.+$/, "Expected <feed>:<stopId>"),
+  feeds: z.string().trim().optional(),
+  minutes: z.coerce.number().int().min(15).max(240).optional()
+});
+
 export const sgArrivalSchema = z.object({
   stop: z.string().trim().regex(/^\d{5}$/, "Singapore bus stop codes are 5 digits")
 });
