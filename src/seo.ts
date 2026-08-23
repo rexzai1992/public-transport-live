@@ -7,6 +7,7 @@ import { Router } from "express";
 import { FEEDS, FEED_IDS, type FeedId, feedDefinition } from "./config.js";
 import { getStaticFeed, findRoutePatterns, listRoutes } from "./gtfsStatic.js";
 import { planJourney, searchStops, type Journey } from "./journey.js";
+import { buildRouteStopSchedule, malaysiaClock, formatGtfsMinutes } from "./schedule.js";
 
 export const seoRouter = Router();
 
@@ -38,6 +39,19 @@ details summary small{color:var(--ink2);font-weight:500}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 18px}
 .chips a{background:var(--card);border:1px solid var(--rule);border-radius:999px;color:var(--ink);font-size:13px;padding:7px 14px;text-decoration:none}
 .chips a:hover{border-color:var(--accent)}
+.statrow{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 18px}
+.statrow span{background:var(--card);border:1px solid var(--rule);border-radius:999px;color:var(--ink2);font-size:12.5px;font-weight:600;padding:7px 14px}
+.statrow b{color:var(--ink);font-variant-numeric:tabular-nums}
+.badge{border-radius:8px;color:#fff;display:inline-block;font-size:14px;font-weight:800;margin-right:10px;padding:4px 12px;vertical-align:middle}
+.tt{background:var(--card);border:1px solid var(--rule);border-radius:12px;border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums;margin:14px 0 22px;overflow:hidden;width:100%}
+.tt th{background:transparent;border-bottom:1px solid var(--rule);color:var(--ink2);font-size:11px;letter-spacing:.06em;padding:8px 12px;text-align:left;text-transform:uppercase}
+.tt td{border-top:1px solid var(--rule);font-size:13.5px;padding:7px 12px}
+.tt td:first-child{color:var(--ink2);font-weight:700;width:52px}
+.rail-list{list-style:none;margin:12px 0 20px;padding:0}
+.rail-list li{padding:5px 0 5px 28px;position:relative}
+.rail-list li::before{background:var(--card);border:3px solid var(--lc,#2563eb);border-radius:50%;content:"";height:9px;left:4px;position:absolute;top:11px;width:9px}
+.rail-list li:not(:last-child)::after{background:var(--lc,#2563eb);content:"";height:calc(100% - 8px);left:9.5px;opacity:.35;position:absolute;top:24px;width:3px}
+.rail-list li:first-child::before,.rail-list li:last-child::before{background:var(--lc,#2563eb)}
 </style>`;
 
 function feedIdOf(value: string): FeedId | null {
@@ -109,16 +123,53 @@ seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
     const label = feedDefinition(feedId).label;
     const mode = feedDefinition(feedId).mode === "rail" ? "train" : "bus";
     const patterns = findRoutePatterns(feed, route.routeId);
+    const lineColor = route.color ? `#${route.color}` : "#2563eb";
+
+    /* The real timetable, from the same schedule expansion the app uses:
+       departures at each direction's origin stop, printed-timetable style. */
+    const clock = malaysiaClock();
+    const schedule = buildRouteStopSchedule(feed, route.routeId, clock);
+
+    function originTimetable(originStopId: string): { html: string; first: string; last: string; gap: number | null } {
+      const times = (schedule.get(originStopId) ?? []).map((entry) => entry.minutes).sort((a, b) => a - b);
+      if (!times.length) return { html: "", first: "\u2014", last: "\u2014", gap: null };
+      const byHour = new Map<number, number[]>();
+      for (const minutes of times) {
+        const hour = Math.floor((((minutes % 1440) + 1440) % 1440) / 60);
+        const bucket = byHour.get(hour);
+        if (bucket) bucket.push(minutes % 60);
+        else byHour.set(hour, [minutes % 60]);
+      }
+      const gaps = times.slice(1).map((t, i) => t - times[i]).filter((g) => g > 0 && g < 180).sort((a, b) => a - b);
+      const gap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : null;
+      const rows = [...byHour.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([hour, mins]) => `<tr><td>${String(hour).padStart(2, "0")}</td><td>${[...new Set(mins)].sort((a, b) => a - b).map((m) => String(m).padStart(2, "0")).join(" \u00b7 ")}</td></tr>`)
+        .join("");
+      return {
+        html: `<table class="tt"><tr><th>Hour</th><th>Departure minutes</th></tr>${rows}</table>`,
+        first: formatGtfsMinutes(times[0]),
+        last: formatGtfsMinutes(times[times.length - 1]),
+        gap
+      };
+    }
 
     const directions = patterns
-      .map((pattern, index) => {
+      .map((pattern) => {
         const stops = pattern.stops;
         if (!stops.length) return "";
         const heading = pattern.headsign
           ? `Towards ${esc(pattern.headsign)}`
-          : `${esc(stops[0].name)} → ${esc(stops[stops.length - 1].name)}`;
-        return `<h2>${heading} (${stops.length} stops)</h2>
-<ol>${stops.map((stop) => `<li>${esc(stop.name)}</li>`).join("")}</ol>`;
+          : `${esc(stops[0].name)} \u2192 ${esc(stops[stops.length - 1].name)}`;
+        const tt = originTimetable(stops[0].stopId);
+        const chips = `<div class="statrow">
+<span><b>${stops.length}</b> stops</span>
+<span>first <b>${tt.first}</b></span><span>last <b>${tt.last}</b></span>
+${tt.gap ? `<span>every <b>~${tt.gap} min</b></span>` : ""}
+</div>`;
+        return `<h2>${heading}</h2>${chips}
+${tt.html ? `<h3 style="font-size:14px;margin:0 0 4px">Departures from ${esc(stops[0].name)} (scheduled)</h3>${tt.html}` : ""}
+<ul class="rail-list" style="--lc:${lineColor}">${stops.map((stop) => `<li>${esc(stop.name)}</li>`).join("")}</ul>`;
       })
       .join("");
 
@@ -132,8 +183,8 @@ seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(`${label} ${mode} ${code}${route.longName ? ` (${route.longName})` : ""}: all ${stopCount} stops, route map and real-time ${mode} positions. Track it live, free.`)}">
 <link rel="canonical" href="https://public.kaynx1.com/route/${feedId}/${encodeURIComponent(route.routeId)}">${PAGE_STYLE}</head><body><main>
-<h1>${esc(code)}${route.longName && route.longName !== code ? ` — ${esc(route.longName)}` : ""}</h1>
-<p class="sub">${esc(label)} · live positions and arrival estimates in the app</p>
+<h1><span class="badge" style="background:${lineColor}">${esc(code)}</span>${route.longName && route.longName !== code ? esc(route.longName) : `${esc(label)} ${mode} ${esc(code)}`}</h1>
+<p class="sub">${esc(label)} \u00b7 scheduled times below come from the official feed \u2014 live positions and real-time estimates are in the app</p>
 <a class="cta" href="${esc(appLink)}">Track ${esc(code)} live on the map</a>
 ${directions || "<p>Stop list unavailable right now.</p>"}
 <p class="foot"><a href="/routes">All routes</a> · <a href="/">Public Transport Live</a> · times are estimates — <a href="/terms.html">Terms</a></p>
