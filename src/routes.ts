@@ -349,29 +349,37 @@ apiRouter.get("/alerts", async (_req, res, next) => {
   }
 });
 
-let lastAlertDigest = "";
+/* Push discipline, keyed by LINE not message text. MTREC is crowdsourced:
+   statuses flap (Degraded ↔ Normal) and remarks get edited between polls, so a
+   naive "message changed → push" spams the same line repeatedly. Instead each
+   line can push at most once per cooldown; pre-existing suspensions at startup
+   are recorded silently, never blasted. */
+const PUSH_COOLDOWN_MS = 3 * 60 * 60 * 1000; // 3 hours per line
+const lastPushByLine = new Map<string, number>();
 let alertDigestPrimed = false;
+
 async function maybePushAlerts(alerts: { line: string; message: string; severe?: boolean; routes?: { category: string; routeId: string }[] }[]): Promise<void> {
-  // Only FULL SUSPENSIONS push. Degraded service still shows in the app's
-  // banner and on the affected line, but does not send a notification.
   const severe = alerts.filter((a) => a.severe);
-  const digest = severe.map((a) => a.line + a.message).join("|");
-  if (digest === lastAlertDigest) return;
-  const previous = lastAlertDigest;
-  lastAlertDigest = digest;
+  const now = Date.now();
+
+  // First observation after a restart: record what is already down, push none.
   if (!alertDigestPrimed) {
     alertDigestPrimed = true;
+    for (const a of severe) lastPushByLine.set(a.line, now);
     return;
   }
-  if (!severe.length || digest === previous) return;
-  const newest = severe[0];
-  // Deep-link to the affected line so tapping the push opens its info page.
-  const route = newest.routes?.[0];
-  const path = route ? `/?area=${encodeURIComponent(route.category)}&route=${encodeURIComponent(route.routeId)}` : "/";
-  await Promise.all([
-    pushToAll(`\u26a0 ${newest.line}`, newest.message, path),
-    pushWebAll(`\u26a0 ${newest.line}`, newest.message, `https://public.kaynx1.com${path}`)
-  ]).catch(() => {});
+
+  for (const a of severe) {
+    const last = lastPushByLine.get(a.line) ?? 0;
+    if (now - last < PUSH_COOLDOWN_MS) continue; // still cooling down
+    lastPushByLine.set(a.line, now);
+    const route = a.routes?.[0];
+    const path = route ? `/?area=${encodeURIComponent(route.category)}&route=${encodeURIComponent(route.routeId)}` : "/";
+    await Promise.all([
+      pushToAll(`\u26a0 ${a.line}`, a.message, path),
+      pushWebAll(`\u26a0 ${a.line}`, a.message, `https://public.kaynx1.com${path}`)
+    ]).catch(() => {});
+  }
 }
 
 /* Live platform crowding for one SG rail line — the only real-time train
