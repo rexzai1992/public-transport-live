@@ -146,6 +146,7 @@ td:last-child{font-variant-numeric:tabular-nums;text-align:right}
 <h1>Public Transport Live</h1><p class="sub" id="sub">Loading\u2026</p>
 <div class="grid" id="cards"></div>
 <h2>Visits \u2014 last 30 days</h2><div class="bars" id="bars"></div>
+<h2>Minutes used \u2014 last 30 days</h2><div class="bars" id="minbars"></div>
 <h2>Most opened routes</h2><table id="routes"><tr><th>Route</th><th>Opens</th></tr></table>
 <script>
 fetch("/my-admin/data").then((r)=>r.json()).then((d)=>{
@@ -153,12 +154,22 @@ fetch("/my-admin/data").then((r)=>r.json()).then((d)=>{
   const t=d.today;
   document.getElementById("sub").textContent=
     "tracking since "+d.startedTracking+" \u00b7 uptime "+Math.floor(d.uptimeSeconds/3600)+"h "+Math.floor(d.uptimeSeconds%3600/60)+"m \u00b7 rss "+d.memoryMb+" MB";
-  const cards=[["Total visits",d.visits],["Visits today",t.visits],["API calls today",t.api],
-    ["Routes opened today",t.routeViews],["Journeys today",t.journeys],["Nearby today",t.nearby],["Flight loads today",t.flights]];
-  document.getElementById("cards").innerHTML=cards.map(([k,v])=>"<div class=card><b>"+v.toLocaleString()+"</b><span>"+k+"</span></div>").join("");
+  const mins=Math.round((t.activeSec||0)/60);
+  const avg=t.visits?Math.round((t.activeSec||0)/t.visits):0;
+  const cards=[["Total visits",d.visits],["Visits today",t.visits],
+    ["Time used today",mins+" min"],["Avg per visit",avg+" s"],
+    ["Stayed 30s+",t.s30||0],["Used 3min+",t.s3m||0],["Used 10min+",t.s10m||0],
+    ["Routes opened",t.routeViews],["Journeys",t.journeys],["Nearby",t.nearby],
+    ["Flight loads",t.flights],["API calls",t.api]];
+  document.getElementById("cards").innerHTML=cards.map(([k,v])=>"<div class=card><b>"+(typeof v==="number"?v.toLocaleString():v)+"</b><span>"+k+"</span></div>").join("");
   const max=Math.max(1,...days.map(([,v])=>v.visits));
   document.getElementById("bars").innerHTML=days.map(([k,v])=>
     "<div style=height:"+Math.max(2,Math.round(v.visits/max*100))+"% data-t='"+k.slice(5)+": "+v.visits+"'></div>").join("")||"<span style=color:var(--ink2);font-size:12px>no days yet</span>";
+  const maxMin=Math.max(1,...days.map(([,v])=>Math.round((v.activeSec||0)/60)));
+  document.getElementById("minbars").innerHTML=days.map(([k,v])=>{
+    const m=Math.round((v.activeSec||0)/60);
+    return "<div style=height:"+Math.max(2,Math.round(m/maxMin*100))+"% data-t='"+k.slice(5)+": "+m+" min'></div>";
+  }).join("")||"<span style=color:var(--ink2);font-size:12px>no days yet</span>";
   document.getElementById("routes").insertAdjacentHTML("beforeend",
     d.topRoutes.map((r)=>"<tr><td>"+r.key+"</td><td>"+r.count+"</td></tr>").join("")||"<tr><td colspan=2>none yet</td></tr>");
 });
