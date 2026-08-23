@@ -84,3 +84,7 @@ build("ktm-klang-valley", 3.05, 101.65, 10,
 build("changi-airport", 1.345, 103.96, 12,
       [("sg-rail","CGL",None),("sg-bus","36","#2563eb")])
 build("klia-area", 2.76, 101.70, 11, [])
+# Wide banner for the landing hero: the whole KL rail network in one strip.
+build("hero-banner", 3.11, 101.66, 11,
+      [(RAIL, c, None) for c in ["KGL","PYL","KJL","AGL","SPL","SAL","MRL","BRT"]],
+      cols=4, rows=2)
