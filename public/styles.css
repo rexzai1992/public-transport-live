@@ -216,7 +216,6 @@ body {
   bottom: calc(var(--sp-4) + var(--safe-bottom));
   box-shadow: var(--shadow);
   display: flex;
-  flex-wrap: wrap;
   left: calc(var(--sp-4) + var(--safe-left));
   overflow: hidden;
   position: fixed;
@@ -2640,18 +2639,32 @@ body.mode-rail .legend-rail {
 
 /* Disruption strip: pinned above everything in the sheet. */
 .alert-strip {
-  flex: 0 0 100%;
-  order: -1;
-  width: 100%;
-  max-height: 30vh;
+  position: fixed;
+  top: calc(var(--sp-3) + var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  width: calc(100vw - 2 * var(--sp-4));
+  max-width: 460px;
+  max-height: 40vh;
   overflow-y: auto;
-  background: color-mix(in srgb, #d64545 18%, var(--glass-raised));
-  border-bottom: 1px solid color-mix(in srgb, #d64545 40%, transparent);
-  border-radius: var(--r-panel) var(--r-panel) 0 0;
+  z-index: 900;
+  background: color-mix(in srgb, #d64545 22%, var(--glass-raised));
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+  border: 1px solid color-mix(in srgb, #d64545 45%, transparent);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow);
   color: var(--ink);
   font-size: 12.5px;
   line-height: 1.45;
-  padding: 10px var(--sp-5);
+  opacity: 0;
+  padding: 12px 40px 12px var(--sp-4);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.alert-strip:not(.hidden) {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .alert-strip b {
@@ -2663,11 +2676,12 @@ body.mode-rail .legend-rail {
   border: 0;
   color: var(--ink-2);
   cursor: pointer;
-  float: right;
-  font-size: 16px;
+  font-size: 18px;
   line-height: 1;
-  margin-left: var(--sp-2);
-  padding: 0 2px;
+  padding: 4px;
+  position: absolute;
+  right: 8px;
+  top: 8px;
 }
 
 /* Line-level advisory: the warning lives on the line, not just in a banner. */
