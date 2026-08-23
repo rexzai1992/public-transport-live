@@ -4,6 +4,7 @@ import morgan from "morgan";
 import path from "node:path";
 import { ZodError } from "zod";
 import { apiRouter, adminStats, DEFAULT_JOURNEY_FEEDS } from "./routes.js";
+import { seoRouter } from "./seo.js";
 import { timingSafeEqual } from "node:crypto";
 import { UpstreamError } from "./http.js";
 
@@ -234,6 +235,10 @@ fetch("/my-admin/data").then((r)=>r.json()).then((d)=>{
     d.topRoutes.map((r)=>"<tr><td title='"+r.key+"'>"+(r.name||r.key)+"</td><td>"+r.count+"</td></tr>").join("")||"<tr><td colspan=2>none yet</td></tr>");
 });
 </script></body></html>`;
+
+/* Route landing pages + dynamic sitemap, registered before the static dir so
+   /sitemap.xml here beats the old hand-written file. */
+app.use(seoRouter);
 
 app.use(express.static(path.join(process.cwd(), "public")));
 
