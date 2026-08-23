@@ -17,7 +17,7 @@ import { planJourney, searchStops, nearbyDepartures, stopBoard } from "./journey
 import { getSgStopArrivals } from "./sg/vehicles.js";
 import { getTrainAlerts, getPlatformCrowd } from "./sg/datamall.js";
 import { getAircraft, getFlightRoute, findFlight } from "./flights.js";
-import { bumpVisit, bumpApi, bumpDay, bumpRoute, bumpActive, bumpTier, addFeedback, bumpInstall, bumpDevice, visitTotal, getStats } from "./stats.js";
+import { bumpVisit, bumpApi, bumpDay, bumpRoute, bumpActive, bumpTier, addFeedback, bumpInstall, bumpDevice, bumpGuideView, bumpFromGuide, visitTotal, getStats } from "./stats.js";
 import {
   categoryParamSchema,
   journeySchema,
@@ -326,7 +326,21 @@ apiRouter.get("/visit", (req, res) => {
   if (req.query.device === "1" && (src === "pwa" || src === "apk")) {
     bumpDevice(src);
   }
+  if (req.query.ref === "guide") {
+    bumpFromGuide();
+  }
   res.json({ visits: bumpVisit(src) });
+});
+
+/* Fired by the static guide site (fetch no-cors); response body is never
+   read, so the pinned CORS policy stays untouched. */
+apiRouter.get("/guide-view", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const page = String(req.query.page ?? "").slice(0, 80);
+  if (/^\/[a-z0-9/-]*$/.test(page)) {
+    bumpGuideView(page === "/" ? "/ (landing)" : page);
+  }
+  res.status(204).end();
 });
 
 /* Session heartbeat: the page reports chunks of visible-use seconds when it

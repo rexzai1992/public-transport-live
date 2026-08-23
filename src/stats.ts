@@ -16,6 +16,9 @@ type DayStats = {
   /** Visits arriving from an installed surface. */
   pwa: number;
   apk: number;
+  /** Guide (blog) page views, and app visits that came from the guide. */
+  guideViews: number;
+  fromGuide: number;
   /** Sessions that stayed at least 30 s / 3 min / 10 min — each counted once. */
   s30: number;
   s3m: number;
@@ -37,19 +40,21 @@ type Stats = {
       standalone open, so it includes iOS and pre-tracking installs). */
   pwaDevices: number;
   apkDevices: number;
+  /** Views per guide page, capped like the routes table. */
+  guidePages: Record<string, number>;
 };
 
 const DATA_DIR = new URL("../data/", import.meta.url);
 const STATS_FILE = new URL("../data/stats.json", import.meta.url);
 const LEGACY_VISITS_FILE = new URL("../data/visits.json", import.meta.url);
 
-const EMPTY_DAY: DayStats = { visits: 0, api: 0, routeViews: 0, journeys: 0, nearby: 0, flights: 0, activeSec: 0, s30: 0, s3m: 0, s10m: 0, pwa: 0, apk: 0 };
+const EMPTY_DAY: DayStats = { visits: 0, api: 0, routeViews: 0, journeys: 0, nearby: 0, flights: 0, activeSec: 0, s30: 0, s3m: 0, s10m: 0, pwa: 0, apk: 0, guideViews: 0, fromGuide: 0 };
 
 function load(): Stats {
   try {
     const parsed = JSON.parse(readFileSync(STATS_FILE, "utf-8")) as Stats;
     if (parsed && typeof parsed.visits === "number") {
-      return { ...parsed, days: parsed.days ?? {}, routes: parsed.routes ?? {}, routeNames: parsed.routeNames ?? {}, feedback: parsed.feedback ?? [], pwaInstalls: parsed.pwaInstalls ?? 0, pwaDevices: parsed.pwaDevices ?? 0, apkDevices: parsed.apkDevices ?? 0 };
+      return { ...parsed, days: parsed.days ?? {}, routes: parsed.routes ?? {}, routeNames: parsed.routeNames ?? {}, feedback: parsed.feedback ?? [], pwaInstalls: parsed.pwaInstalls ?? 0, pwaDevices: parsed.pwaDevices ?? 0, apkDevices: parsed.apkDevices ?? 0, guidePages: parsed.guidePages ?? {} };
     }
   } catch {
     /* first run, or the file is gone */
@@ -70,7 +75,8 @@ function load(): Stats {
     feedback: [],
     pwaInstalls: 0,
     pwaDevices: 0,
-    apkDevices: 0
+    apkDevices: 0,
+    guidePages: {}
   };
 }
 
@@ -107,6 +113,8 @@ function day(): DayStats {
     entry.s10m ??= 0;
     entry.pwa ??= 0;
     entry.apk ??= 0;
+    entry.guideViews ??= 0;
+    entry.fromGuide ??= 0;
   }
   if (!entry) {
     entry = { ...EMPTY_DAY };
@@ -132,6 +140,22 @@ export function bumpVisit(src?: string): number {
 
 export function bumpInstall(): void {
   stats.pwaInstalls += 1;
+  persist();
+}
+
+export function bumpGuideView(page: string): void {
+  day().guideViews += 1;
+  stats.guidePages[page] = (stats.guidePages[page] ?? 0) + 1;
+  const entries = Object.entries(stats.guidePages);
+  if (entries.length > 200) {
+    entries.sort((a, b) => b[1] - a[1]);
+    stats.guidePages = Object.fromEntries(entries.slice(0, 150));
+  }
+  persist();
+}
+
+export function bumpFromGuide(): void {
+  day().fromGuide += 1;
   persist();
 }
 
@@ -209,6 +233,7 @@ export function getStats() {
       .slice(0, 15)
       .map(([key, count]) => ({ key, name: stats.routeNames[key] ?? key, count })),
     pwaInstalls: stats.pwaInstalls,
+    guidePages: Object.entries(stats.guidePages).sort((a, b) => b[1] - a[1]).slice(0, 12),
     pwaDevices: stats.pwaDevices,
     apkDevices: stats.apkDevices,
     feedback: stats.feedback.slice(-40).reverse(),
