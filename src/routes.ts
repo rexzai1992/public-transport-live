@@ -354,7 +354,9 @@ apiRouter.get("/alerts", async (_req, res, next) => {
    naive "message changed → push" spams the same line repeatedly. Instead each
    line can push at most once per cooldown; pre-existing suspensions at startup
    are recorded silently, never blasted. */
-const PUSH_COOLDOWN_MS = 3 * 60 * 60 * 1000; // 3 hours per line
+// Per-line push cooldown, hours. Change PUSH_COOLDOWN_HOURS in .env and
+// restart — no code change needed. Default 3h.
+const PUSH_COOLDOWN_MS = (Number(process.env.PUSH_COOLDOWN_HOURS) || 3) * 60 * 60 * 1000;
 const lastPushByLine = new Map<string, number>();
 let alertDigestPrimed = false;
 
