@@ -5069,10 +5069,15 @@ function showInstallCard({ mode, onInstall }) {
              <li><span class="install-glyph">${shareGlyph}</span>Tap <b>Share</b> in Safari</li>
              <li><span class="install-glyph">${plusGlyph}</span>Choose <b>Add to Home Screen</b></li>
            </ol>`
+        : mode === "android-fallback"
+        ? `<a class="install-go" href="/download/ptlive.apk" download style="text-decoration:none;text-align:center">Get the Android app (APK)</a>
+           <ol class="install-steps">
+             <li><span class="install-glyph">${plusGlyph}</span>Or: menu <b>\u22ee</b> \u2192 <b>Add to Home screen</b></li>
+           </ol>`
         : `<button type="button" class="install-go">Install app</button>`
     }
     ${
-      /android/i.test(navigator.userAgent)
+      /android/i.test(navigator.userAgent) && mode === "android"
         ? `<a class="install-apk" href="/download/ptlive.apk" download>Or get the Android app <b>(APK)</b> for reliable alerts \u2192</a>`
         : ""
     }
@@ -5095,10 +5100,13 @@ function showInstallCard({ mode, onInstall }) {
 
 /* Chrome/Edge/Android: the real prompt. Captured, deferred, offered once. */
 let deferredInstall = null;
+let installPromptFired = false;
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
   deferredInstall = event;
+  installPromptFired = true;
   if (runningStandalone || installDismissed() || window.Capacitor?.isNativePlatform?.()) return;
+  document.getElementById("installCard")?.remove(); // replace any fallback card
   window.setTimeout(() => {
     showInstallCard({
       mode: "android",
@@ -5110,8 +5118,20 @@ window.addEventListener("beforeinstallprompt", (event) => {
         if (choice?.outcome !== "accepted") markInstallDismissed();
       }
     });
-  }, 4000);
+  }, 2500);
 });
+
+/* Chrome withholds beforeinstallprompt until it judges the user "engaged",
+   so a first-time Android visitor often sees nothing. If the event hasn't
+   fired a few seconds in, offer the fallback card anyway: the APK download
+   plus manual "Add to Home Screen" — so first open always offers something. */
+if (/android/i.test(navigator.userAgent) && !runningStandalone && !window.Capacitor?.isNativePlatform?.()) {
+  window.setTimeout(() => {
+    if (!installPromptFired && !installDismissed() && !document.getElementById("installCard")) {
+      showInstallCard({ mode: "android-fallback" });
+    }
+  }, 6000);
+}
 
 window.addEventListener("appinstalled", () => {
   document.getElementById("installCard")?.remove();
