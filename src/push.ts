@@ -92,7 +92,7 @@ export async function pushToAll(title: string, body: string): Promise<{ sent: nu
       notification: { title, body },
       android: {
         priority: "high",
-        notification: { sound: "default", channelId: "alerts", defaultVibrateTimings: true, priority: "max" }
+        notification: { sound: "default", channelId: "alerts", defaultVibrateTimings: true, priority: "max", icon: "ic_stat_bus" }
       }
     });
     res.responses.forEach((r, index) => {
