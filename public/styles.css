@@ -2990,6 +2990,18 @@ html[data-theme="dark"] .map-btn.discover {
   width: 100%;
 }
 
+.install-apk {
+  color: var(--ink-2);
+  display: block;
+  font-size: 12px;
+  margin-top: 10px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.install-apk b { color: var(--ink); }
+.install-apk:hover { color: var(--ink); }
+
 .install-steps {
   display: flex;
   flex-direction: column;
