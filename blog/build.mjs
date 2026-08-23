@@ -63,6 +63,7 @@ blockquote{border-left:3px solid var(--edge-strong);color:var(--ink-2);margin:14
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 26px}
 .chip{background:var(--panel);border:1px solid var(--edge);border-radius:999px;color:var(--ink-2);font-size:12.5px;font-weight:600;padding:7px 14px}
 .chip b{color:var(--ink)}
+.hero-img{border:1px solid var(--edge);border-radius:var(--r-panel);box-shadow:var(--shadow);display:block;height:auto;margin:16px 0 2px;width:100%}
 .ggrid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
 .gcard{margin:0}
 .gcard img{border:1px solid var(--edge);border-radius:10px;display:block;margin-bottom:10px;width:100%;height:150px;object-fit:cover}
@@ -172,6 +173,8 @@ writeFileSync(join(out, "index.html"), page(
 <h1>KL &amp; Singapore transit, explained</h1>
 <p class="sub">Line guides, schedules and how-tos built on the official open-data feeds —
 paired with a free live tracker showing every bus and train moving in real time.</p>
+<img class="hero-img" src="/img/hero-banner.webp" alt="Map of the Klang Valley with all KL rail lines drawn" width="1364" height="382" loading="eager">
+<figcaption style="color:var(--ink-3);font-size:11px;margin-top:4px">Map data © <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap contributors</a> · Tiles © <a href="https://carto.com/attributions" rel="noopener">CARTO</a> · line geometry from the official GTFS feeds</figcaption>
 <div class="cta-row"><a class="cta" href="${APP}">Open the live tracker</a>
 <a class="cta ghost" href="${APP}/routes">Browse ${routeTotal ? routeTotal.toLocaleString() : "all"} routes</a></div>
 <div class="chips">
