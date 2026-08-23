@@ -4698,6 +4698,25 @@ async function registerPushIfAllowed() {
 }
 registerPushIfAllowed();
 
+/* Tapping a disruption push opens the affected line. The payload carries a
+   url like "/?area=…&route=…"; parse it and select that route in place. */
+function openFromNotification(data) {
+  try {
+    const url = data?.url || "";
+    const qs = url.includes("?") ? url.split("?")[1] : "";
+    const params = new URLSearchParams(qs);
+    const area = params.get("area");
+    const route = params.get("route");
+    if (area && route) {
+      setView("routes");
+      selectRoute(route, area).catch(() => {});
+    }
+  } catch {
+    /* a bad payload just opens the app normally */
+  }
+}
+window.RapidBusNative?.onNotificationTap?.(openFromNotification);
+
 /* Web Push (browser / PWA, non-APK): subscribe through the service worker
    using the server's VAPID key. Opt-in — only runs once the user has enabled
    notifications, and is idempotent, so calling it again just re-confirms. */
