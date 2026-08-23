@@ -17,7 +17,7 @@ import { planJourney, searchStops, nearbyDepartures, stopBoard } from "./journey
 import { getSgStopArrivals } from "./sg/vehicles.js";
 import { getTrainAlerts, getPlatformCrowd } from "./sg/datamall.js";
 import { getAircraft, getFlightRoute, findFlight } from "./flights.js";
-import { bumpVisit, bumpApi, bumpDay, bumpRoute, bumpActive, bumpTier, addFeedback, bumpInstall, visitTotal, getStats } from "./stats.js";
+import { bumpVisit, bumpApi, bumpDay, bumpRoute, bumpActive, bumpTier, addFeedback, bumpInstall, bumpDevice, visitTotal, getStats } from "./stats.js";
 import {
   categoryParamSchema,
   journeySchema,
@@ -322,6 +322,9 @@ apiRouter.get("/visit", (req, res) => {
   const src = req.query.src === "pwa" || req.query.src === "apk" ? String(req.query.src) : undefined;
   if (req.query.installed === "1") {
     bumpInstall();
+  }
+  if (req.query.device === "1" && (src === "pwa" || src === "apk")) {
+    bumpDevice(src);
   }
   res.json({ visits: bumpVisit(src) });
 });

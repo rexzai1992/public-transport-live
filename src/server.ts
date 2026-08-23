@@ -222,7 +222,8 @@ fetch("/my-admin/data").then((r)=>r.json()).then((d)=>{
     ["Time used",mins+" min"],["Avg / visit",avg+" s"],
     ["Stayed 30s+",t.s30||0],["Used 3min+",t.s3m||0],["Used 10min+",t.s10m||0],
     ["Routes opened",t.routeViews],["Journeys",t.journeys],["Nearby",t.nearby],["Flights",t.flights],
-    ["PWA installs (all time)",d.pwaInstalls||0],["PWA visits today",t.pwa||0],["APK visits today",t.apk||0],
+    ["PWA devices (all time)",d.pwaDevices||0],["APK devices (all time)",d.apkDevices||0],
+    ["PWA installs seen",d.pwaInstalls||0],["PWA visits today",t.pwa||0],["APK visits today",t.apk||0],
     ["Browser visits today",Math.max(0,(t.visits||0)-(t.pwa||0)-(t.apk||0))]];
   document.getElementById("cards").innerHTML=cards.map(([k,v])=>"<div class=card><b>"+(typeof v==="number"?v.toLocaleString():v)+"</b><span>"+k+"</span></div>").join("");
   document.getElementById("chart").innerHTML=days.length?chart(days):"<span style=color:var(--ink2);font-size:12px>no days yet</span>";
