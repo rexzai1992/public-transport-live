@@ -117,6 +117,25 @@ function toAircraft(rows: Record<string, unknown>[]): Aircraft[] {
 const positionsCache = new Map<string, { expiresAt: number; aircraft: Aircraft[] }>();
 const inFlight = new Map<string, Promise<Aircraft[]>>();
 
+/* Both flight caches only ever gained keys — every map cell viewed and every
+   callsign looked up stayed in memory forever. Small per entry, unbounded in
+   count. A sweep drops expired cells, and the route table is capped. */
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of positionsCache) {
+    if (entry.expiresAt < now) positionsCache.delete(key);
+  }
+  if (routeCache.size > 4000) {
+    // Oldest-inserted first: Map preserves insertion order.
+    const drop = routeCache.size - 3000;
+    let n = 0;
+    for (const key of routeCache.keys()) {
+      routeCache.delete(key);
+      if (++n >= drop) break;
+    }
+  }
+}, 5 * 60 * 1000).unref();
+
 export async function getAircraft(lat: number, lon: number, radiusNm = 60): Promise<Aircraft[]> {
   const radius = Math.max(10, Math.min(250, Math.round(radiusNm / 10) * 10));
   // One cache cell per ~half degree and radius bucket: viewers share fetches,
