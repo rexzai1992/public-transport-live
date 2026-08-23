@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { type FeedId, FEED_IDS, FEEDS, feedDefinition } from "./config.js";
-import { buildStopEtas } from "./eta.js";
+import { buildStopEtas, buildPassedTrips } from "./eta.js";
 import { buildRouteMapGeoJson } from "./geojson.js";
 import { getVehiclePositions, hasRealtime } from "./gtfsRealtime.js";
 import {
@@ -160,10 +160,13 @@ apiRouter.get("/rapid-bus/:category/map", async (req, res, next) => {
 
     const shapes = pattern ? pattern.shapes : findRouteShapes(feed, routeId);
     const clock = malaysiaClock();
+    const patternStops = pattern ? pattern.stops : findOrderedRouteStops(feed, routeId);
     const stops = withNextDepartures(
-      pattern ? pattern.stops : findOrderedRouteStops(feed, routeId),
+      patternStops,
       buildRouteStopSchedule(feed, routeId, clock),
-      clock
+      clock,
+      3,
+      buildPassedTrips(patternStops, shapes, vehicles)
     );
     const stopEtas = buildStopEtas(stops, shapes, vehicles);
     const geojson = buildRouteMapGeoJson(

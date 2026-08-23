@@ -91,11 +91,13 @@ export function activeServiceIds(feed: StaticGtfsFeed, clock: MalaysiaClock): Se
    route's trips — not just one representative trip. Trips whose service isn't
    running today are dropped, unless that would leave nothing at all (some feeds
    ship no usable calendar, and a timetable beats an empty panel). */
+export type ScheduledDeparture = { minutes: number; tripId?: string };
+
 export function buildRouteStopSchedule(
   feed: StaticGtfsFeed,
   routeId: string,
   clock: MalaysiaClock
-): Map<string, number[]> {
+): Map<string, ScheduledDeparture[]> {
   const trips = feed.tripsByRouteId.get(routeId) ?? [];
   const active = activeServiceIds(feed, clock);
 
@@ -104,15 +106,19 @@ export function buildRouteStopSchedule(
   );
   const usableTrips = runningToday.length ? runningToday : trips;
 
-  const byStop = new Map<string, Set<number>>();
+  /* minutes -> tripId, per stop. The tripId lets live vehicle positions
+     cancel a specific departure once its bus has demonstrably gone past. */
+  const byStop = new Map<string, Map<number, string | undefined>>();
 
-  const record = (stopId: string, minutes: number) => {
+  const record = (stopId: string, minutes: number, tripId?: string) => {
     let times = byStop.get(stopId);
     if (!times) {
-      times = new Set<number>();
+      times = new Map<number, string | undefined>();
       byStop.set(stopId, times);
     }
-    times.add(minutes);
+    if (!times.has(minutes)) {
+      times.set(minutes, tripId);
+    }
   };
 
   for (const trip of usableTrips) {
@@ -120,6 +126,8 @@ export function buildRouteStopSchedule(
     const frequencies = feed.frequenciesByTripId.get(trip.tripId) ?? [];
 
     if (frequencies.length) {
+      // Headway-expanded departures share one template trip; a single live
+      // vehicle cannot cancel them individually, so they carry no tripId.
       for (const departure of expandFrequencies(stopTimes, frequencies)) {
         record(departure.stopId, departure.minutes);
       }
@@ -129,13 +137,16 @@ export function buildRouteStopSchedule(
     for (const stopTime of stopTimes) {
       const minutes = gtfsTimeToMinutes(stopTime.departureTime ?? stopTime.arrivalTime);
       if (minutes !== undefined) {
-        record(stopTime.stopId, minutes);
+        record(stopTime.stopId, minutes, trip.tripId);
       }
     }
   }
 
   return new Map(
-    [...byStop].map(([stopId, times]) => [stopId, [...times].sort((a, b) => a - b)])
+    [...byStop].map(([stopId, times]) => [
+      stopId,
+      [...times].map(([minutes, tripId]) => ({ minutes, tripId })).sort((a, b) => a.minutes - b.minutes)
+    ])
   );
 }
 
@@ -193,18 +204,25 @@ function waitMinutes(departure: number, nowMinutes: number): number {
 /** Attach each stop's real upcoming departures, soonest first. */
 export function withNextDepartures(
   stops: RouteStop[],
-  schedule: Map<string, number[]>,
+  schedule: Map<string, ScheduledDeparture[]>,
   clock: MalaysiaClock,
-  limit = 3
+  limit = 3,
+  /* Trips a live vehicle has already carried PAST the stop. Buses run early
+     as well as late; a timetable row for a bus that is visibly gone is a lie,
+     so those departures are dropped rather than shown as a wait. */
+  passedTrips?: Map<string, Set<string>>
 ): RouteStop[] {
   return stops.map((stop) => {
-    const times = schedule.get(stop.stopId);
+    const passed = passedTrips?.get(stop.stopId);
+    const times = schedule
+      .get(stop.stopId)
+      ?.filter((entry) => !(entry.tripId && passed?.has(entry.tripId)));
     if (!times?.length) {
       return stop;
     }
 
     const upcoming = times
-      .map((minutes) => ({ minutes, wait: waitMinutes(minutes, clock.minutes) }))
+      .map((entry) => ({ minutes: entry.minutes, wait: waitMinutes(entry.minutes, clock.minutes) }))
       .sort((a, b) => a.wait - b.wait)
       .slice(0, limit);
 

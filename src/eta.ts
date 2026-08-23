@@ -26,6 +26,48 @@ export function buildStopEtas(
   return etaByStop;
 }
 
+/* Which scheduled trips have already been carried past which stops, judged by
+   projecting each reporting vehicle onto the pattern shape. 150 m of buffer:
+   GPS wobble at the stop itself must not cancel a bus that is still there. */
+export function buildPassedTrips(
+  stops: RouteStop[],
+  shapes: GtfsShapePoint[][],
+  vehicles: VehiclePosition[]
+): Map<string, Set<string>> {
+  const passed = new Map<string, Set<string>>();
+  const shapeIndexes = shapes.map(buildShapeIndex).filter((shape) => shape.length > 1);
+  const withTrip = vehicles.filter((vehicle) => vehicle.tripId);
+  if (!withTrip.length || !shapeIndexes.length) {
+    return passed;
+  }
+
+  for (const shape of shapeIndexes) {
+    const vehicleDistances = withTrip
+      .map((vehicle) => {
+        const projection = projectToShape(vehicle.position.lat, vehicle.position.lon, shape);
+        return projection ? { tripId: vehicle.tripId!, at: projection.distanceMeters } : null;
+      })
+      .filter((entry): entry is { tripId: string; at: number } => entry !== null);
+    if (!vehicleDistances.length) continue;
+
+    for (const stop of stops) {
+      const stopProjection = projectToShape(stop.lat, stop.lon, shape);
+      if (!stopProjection) continue;
+      for (const vehicle of vehicleDistances) {
+        if (vehicle.at > stopProjection.distanceMeters + 150) {
+          let set = passed.get(stop.stopId);
+          if (!set) {
+            set = new Set();
+            passed.set(stop.stopId, set);
+          }
+          set.add(vehicle.tripId);
+        }
+      }
+    }
+  }
+  return passed;
+}
+
 function estimateStopEta(
   stop: RouteStop,
   shapeIndexes: ShapeIndexPoint[][],
