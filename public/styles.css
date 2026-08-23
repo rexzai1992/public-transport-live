@@ -2904,6 +2904,43 @@ html[data-theme="dark"] .map-btn.discover {
   width: 28px;
 }
 
+/* Rating card: install-card chrome plus stars and a one-line idea box. */
+.rate-card { max-width: 320px; }
+
+.rate-stars {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin-top: var(--sp-3);
+}
+
+.rate-star {
+  background: transparent;
+  border: 0;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-size: 26px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+.rate-star.on { color: #f5c518; }
+
+.rate-msg {
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  margin-top: var(--sp-2);
+  padding: 8px 10px;
+  resize: none;
+  width: 100%;
+}
+
+.rate-msg:focus { border-color: var(--edge-strong); outline: none; }
+
 /* The reload offer sits out of the way until tapped. */
 .update-prompt {
   background: var(--invert-bg);

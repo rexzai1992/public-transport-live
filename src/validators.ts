@@ -78,3 +78,8 @@ export const sessionSchema = z.object({
   sec: z.coerce.number().min(0).max(600).optional(),
   tier: z.enum(["30s", "3m", "10m"]).optional()
 });
+
+export const feedbackSchema = z.object({
+  stars: z.coerce.number().int().min(1).max(5),
+  msg: z.string().trim().max(500).optional()
+});

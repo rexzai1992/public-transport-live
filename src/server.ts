@@ -169,6 +169,9 @@ td:last-child{font-variant-numeric:tabular-nums;text-align:right}
 <div class="panel"><div id="chart"></div>
 <div class="legend"><i style="background:var(--line)"></i>visits <i style="background:var(--line2)"></i>minutes used</div></div>
 
+<h2 id=fbh>Feedback</h2>
+<table id="fb"><tr><th>When (MYT)</th><th>Stars</th><th>Suggestion</th></tr></table>
+
 <h2>Most opened routes</h2>
 <table id="routes"><tr><th>Route</th><th>Opens</th></tr></table>
 
@@ -218,9 +221,14 @@ fetch("/my-admin/data").then((r)=>r.json()).then((d)=>{
   const cards=[["Total visits",d.visits],["Visits today",t.visits],
     ["Time used",mins+" min"],["Avg / visit",avg+" s"],
     ["Stayed 30s+",t.s30||0],["Used 3min+",t.s3m||0],["Used 10min+",t.s10m||0],
-    ["Routes opened",t.routeViews],["Journeys",t.journeys],["Nearby",t.nearby],["Flights",t.flights]];
+    ["Routes opened",t.routeViews],["Journeys",t.journeys],["Nearby",t.nearby],["Flights",t.flights],
+    ["PWA installs (all time)",d.pwaInstalls||0],["PWA visits today",t.pwa||0],["APK visits today",t.apk||0],
+    ["Browser visits today",Math.max(0,(t.visits||0)-(t.pwa||0)-(t.apk||0))]];
   document.getElementById("cards").innerHTML=cards.map(([k,v])=>"<div class=card><b>"+(typeof v==="number"?v.toLocaleString():v)+"</b><span>"+k+"</span></div>").join("");
   document.getElementById("chart").innerHTML=days.length?chart(days):"<span style=color:var(--ink2);font-size:12px>no days yet</span>";
+  document.getElementById("fbh").textContent="Feedback"+(d.feedbackCount?" \u2014 "+d.feedbackAvg+"\u2605 avg \u00b7 "+d.feedbackCount+" total":"");
+  document.getElementById("fb").insertAdjacentHTML("beforeend",
+    (d.feedback||[]).map((f)=>"<tr><td>"+f.at+"</td><td>"+"\u2605".repeat(f.stars)+"</td><td>"+(f.msg?f.msg.replace(/[<>&]/g,(c)=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])):"\u2014")+"</td></tr>").join("")||"<tr><td colspan=3>none yet</td></tr>");
   document.getElementById("routes").insertAdjacentHTML("beforeend",
     d.topRoutes.map((r)=>"<tr><td title='"+r.key+"'>"+(r.name||r.key)+"</td><td>"+r.count+"</td></tr>").join("")||"<tr><td colspan=2>none yet</td></tr>");
 });
