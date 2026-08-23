@@ -667,6 +667,12 @@ body.view-journey .search {
   margin-top: 6px;
 }
 
+.rail-foot a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .rail-foot {
   border-top: 1px solid var(--rule);
   color: var(--ink-3);
