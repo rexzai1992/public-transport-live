@@ -6,6 +6,7 @@
 import { Router } from "express";
 import { FEEDS, FEED_IDS, type FeedId, feedDefinition } from "./config.js";
 import { getStaticFeed, findRoutePatterns, listRoutes } from "./gtfsStatic.js";
+import { planJourney, searchStops, type Journey } from "./journey.js";
 
 export const seoRouter = Router();
 
@@ -62,6 +63,7 @@ seoRouter.get("/routes", async (_req, res, next) => {
 <h1>All routes</h1>
 <p class="sub">Malaysia &amp; Singapore public transport — live positions, stops and timetables.</p>
 <a class="cta" href="/">Open the live map</a>
+<h2>Popular journeys</h2><ol>${JOURNEY_PAIRS.map((p) => `<li><a href="/go/${p.slug}">${esc(p.fromName)} → ${esc(p.toName)}</a></li>`).join("")}</ol>
 ${sections.join("")}
 <p class="foot"><a href="/">Public Transport Live</a> · <a href="/terms.html">Terms &amp; Privacy</a></p>
 </main></body></html>`);
@@ -128,7 +130,8 @@ seoRouter.get("/sitemap.xml", async (_req, res, next) => {
     const urls: string[] = [
       "https://public.kaynx1.com/",
       "https://public.kaynx1.com/routes",
-      "https://public.kaynx1.com/terms.html"
+      "https://public.kaynx1.com/terms.html",
+      ...JOURNEY_PAIRS.map((p) => `https://public.kaynx1.com/go/${p.slug}`)
     ];
     for (const feedId of FEED_IDS) {
       const feed = await getStaticFeed(feedId).catch(() => null);
@@ -143,6 +146,111 @@ seoRouter.get("/sitemap.xml", async (_req, res, next) => {
         urls.map((url) => `<url><loc>${url}</loc></url>`).join("\n") +
         `\n</urlset>`
     );
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* ------------------------------------------------------------------------- */
+/* Journey landing pages: /go/<slug> answers "how to get from X to Y" with a  */
+/* real plan from the same engine the app uses — steps, duration, transfers — */
+/* then hands off to the live planner pre-filled. Pairs are curated to ones   */
+/* the open feeds genuinely cover (KLIA, notably, is not: the airport rail    */
+/* is a private operator outside the open data).                              */
+/* ------------------------------------------------------------------------- */
+
+type JourneyPair = {
+  slug: string;
+  fromName: string;
+  lat: number;
+  lon: number;
+  toQuery: string;
+  toName: string;
+};
+
+export const JOURNEY_PAIRS: JourneyPair[] = [
+  { slug: "kl-sentral-to-klcc", fromName: "KL Sentral", lat: 3.1338, lon: 101.6869, toQuery: "KLCC", toName: "KLCC" },
+  { slug: "kl-sentral-to-bukit-bintang", fromName: "KL Sentral", lat: 3.1338, lon: 101.6869, toQuery: "Bukit Bintang", toName: "Bukit Bintang" },
+  { slug: "kl-sentral-to-batu-caves", fromName: "KL Sentral", lat: 3.1338, lon: 101.6869, toQuery: "Batu Caves", toName: "Batu Caves" },
+  { slug: "tbs-to-kl-sentral", fromName: "TBS (Terminal Bersepadu Selatan)", lat: 3.0763, lon: 101.7118, toQuery: "KL Sentral", toName: "KL Sentral" },
+  { slug: "kl-sentral-to-kajang", fromName: "KL Sentral", lat: 3.1338, lon: 101.6869, toQuery: "Kajang", toName: "Kajang" },
+  { slug: "klcc-to-batu-caves", fromName: "KLCC", lat: 3.1578, lon: 101.7119, toQuery: "Batu Caves", toName: "Batu Caves" },
+  { slug: "kl-sentral-to-putrajaya", fromName: "KL Sentral", lat: 3.1338, lon: 101.6869, toQuery: "Putrajaya Sentral", toName: "Putrajaya Sentral" },
+  { slug: "bukit-bintang-to-klcc", fromName: "Bukit Bintang", lat: 3.1466, lon: 101.7107, toQuery: "KLCC", toName: "KLCC" },
+  { slug: "changi-to-orchard", fromName: "Changi Airport", lat: 1.3573, lon: 103.9887, toQuery: "Orchard", toName: "Orchard" },
+  { slug: "changi-to-marina-bay", fromName: "Changi Airport", lat: 1.3573, lon: 103.9887, toQuery: "Marina Bay", toName: "Marina Bay" },
+  { slug: "woodlands-to-raffles-place", fromName: "Woodlands", lat: 1.437, lon: 103.7865, toQuery: "Raffles Place", toName: "Raffles Place" },
+  { slug: "jurong-east-to-changi", fromName: "Jurong East", lat: 1.3329, lon: 103.7422, toQuery: "Changi Airport", toName: "Changi Airport" },
+  { slug: "tampines-to-city-hall", fromName: "Tampines", lat: 1.3546, lon: 103.9451, toQuery: "City Hall", toName: "City Hall" },
+  { slug: "orchard-to-harbourfront", fromName: "Orchard", lat: 1.3040, lon: 103.8320, toQuery: "HarbourFront", toName: "HarbourFront (Sentosa)" }
+];
+
+const goCache = new Map<string, { expiresAt: number; html: string }>();
+
+function legHtml(leg: Journey["legs"][number]): string {
+  if (leg.kind === "walk") {
+    return `<li><b>Walk</b> ${leg.meters} m (~${leg.minutes} min) to ${esc(leg.to.name)}</li>`;
+  }
+  const badge = `<span style="background:#${esc(leg.routeColor || "1c2c44")};border-radius:6px;color:#fff;font-size:12px;font-weight:700;padding:2px 8px">${esc(leg.routeName)}</span>`;
+  return `<li>${badge} ${leg.mode === "rail" ? "train" : "bus"} from <b>${esc(leg.from.name)}</b> to <b>${esc(leg.to.name)}</b> — ${leg.stopCount} stops, ~${leg.minutes} min${leg.headsign ? ` (towards ${esc(leg.headsign)})` : ""}</li>`;
+}
+
+seoRouter.get("/go/:slug", async (req, res, next) => {
+  try {
+    const pair = JOURNEY_PAIRS.find((p) => p.slug === req.params.slug);
+    if (!pair) {
+      res.status(404).type("html").send("Unknown journey");
+      return;
+    }
+    const cached = goCache.get(pair.slug);
+    if (cached && cached.expiresAt > Date.now()) {
+      res.setHeader("Cache-Control", "public, max-age=600");
+      res.type("html").send(cached.html);
+      return;
+    }
+
+    const stops = await searchStops(pair.toQuery, [...FEED_IDS]);
+    const to = stops[0];
+    let journeys: Journey[] = [];
+    if (to) {
+      const plan = await planJourney({
+        from: { lat: pair.lat, lon: pair.lon, name: pair.fromName },
+        to: { stopKey: to.key },
+        feeds: [...FEED_IDS]
+      });
+      journeys = plan.journeys ?? [];
+    }
+
+    const best = journeys[0];
+    const title = `${pair.fromName} to ${pair.toName} by public transport`;
+    const appLink = to
+      ? `/?jf=${pair.lat.toFixed(5)},${pair.lon.toFixed(5)}&jfn=${encodeURIComponent(pair.fromName)}&jt=${encodeURIComponent(to.key)}&jtn=${encodeURIComponent(pair.toName)}`
+      : "/";
+
+    const body = best
+      ? `<p class="sub">Typically <b>~${best.totalMinutes} minutes</b> · ${best.transfers} transfer${best.transfers === 1 ? "" : "s"} · ${best.walkMeters} m walking. Generated just now by the live journey planner; exact times shift through the day.</p>
+<h2>Step by step</h2>
+<ol>${best.legs.map(legHtml).join("")}</ol>
+${journeys.length > 1 ? `<p>${journeys.length - 1} alternative${journeys.length > 2 ? "s" : ""} available in the app, including later departures.</p>` : ""}
+<a class="cta" href="${esc(appLink)}">Plan this trip live — real-time positions &amp; alerts</a>`
+      : `<p class="sub">The live planner could not produce this journey right now.</p>
+<a class="cta" href="/">Open the live tracker</a>`;
+
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)} — route, time &amp; steps</title>
+<meta name="description" content="${esc(`How to get from ${pair.fromName} to ${pair.toName}: step-by-step public transport directions${best ? `, typically ~${best.totalMinutes} minutes` : ""}, with live tracking. Free, no login.`)}">
+<link rel="canonical" href="https://public.kaynx1.com/go/${pair.slug}">${PAGE_STYLE}</head><body><main>
+<h1>${esc(pair.fromName)} → ${esc(pair.toName)}</h1>
+${body}
+<h2>More journeys</h2>
+<ol>${JOURNEY_PAIRS.filter((p) => p.slug !== pair.slug).slice(0, 6).map((p) => `<li><a href="/go/${p.slug}">${esc(p.fromName)} → ${esc(p.toName)}</a></li>`).join("")}</ol>
+<p class="foot"><a href="/routes">All routes</a> · <a href="/">Public Transport Live</a> · times are estimates — <a href="/terms.html">Terms</a></p>
+</main></body></html>`;
+
+    goCache.set(pair.slug, { expiresAt: Date.now() + 10 * 60 * 1000, html });
+    res.setHeader("Cache-Control", "public, max-age=600");
+    res.type("html").send(html);
   } catch (error) {
     next(error);
   }
