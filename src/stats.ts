@@ -24,6 +24,8 @@ type Stats = {
   visits: number;
   days: Record<string, DayStats>;
   routes: Record<string, number>;
+  /** Display name per route key, recorded when the route is opened. */
+  routeNames: Record<string, string>;
 };
 
 const DATA_DIR = new URL("../data/", import.meta.url);
@@ -36,7 +38,7 @@ function load(): Stats {
   try {
     const parsed = JSON.parse(readFileSync(STATS_FILE, "utf-8")) as Stats;
     if (parsed && typeof parsed.visits === "number") {
-      return { ...parsed, days: parsed.days ?? {}, routes: parsed.routes ?? {} };
+      return { ...parsed, days: parsed.days ?? {}, routes: parsed.routes ?? {}, routeNames: parsed.routeNames ?? {} };
     }
   } catch {
     /* first run, or the file is gone */
@@ -52,7 +54,8 @@ function load(): Stats {
     startedTracking: new Date().toISOString().slice(0, 10),
     visits: legacyVisits,
     days: {},
-    routes: {}
+    routes: {},
+    routeNames: {}
   };
 }
 
@@ -130,13 +133,20 @@ export function bumpTier(tier: "30s" | "3m" | "10m"): void {
   persist();
 }
 
-export function bumpRoute(key: string): void {
+export function bumpRoute(key: string, name?: string): void {
   stats.routes[key] = (stats.routes[key] ?? 0) + 1;
+  if (name) {
+    stats.routeNames[key] = name;
+  }
   // Cap the table: when it grows past 500 routes, drop the coldest ones.
   const entries = Object.entries(stats.routes);
   if (entries.length > 500) {
     entries.sort((a, b) => b[1] - a[1]);
     stats.routes = Object.fromEntries(entries.slice(0, 400));
+    const kept = new Set(Object.keys(stats.routes));
+    for (const staleKey of Object.keys(stats.routeNames)) {
+      if (!kept.has(staleKey)) delete stats.routeNames[staleKey];
+    }
   }
   persist();
 }
@@ -154,8 +164,13 @@ export function getStats() {
     topRoutes: Object.entries(stats.routes)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 15)
-      .map(([key, count]) => ({ key, count })),
+      .map(([key, count]) => ({ key, name: stats.routeNames[key] ?? key, count })),
     uptimeSeconds: Math.round(process.uptime()),
-    memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024)
+    memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+    /* Zone boundaries for the admin gauges. Memory limit mirrors pm2's
+       --max-memory-restart; the API budget is a soft self-imposed line to
+       notice growth before upstreams or the box do. */
+    memoryLimitMb: 1200,
+    apiSoftBudget: 100000
   };
 }

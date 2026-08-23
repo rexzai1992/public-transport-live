@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { type FeedId, FEED_IDS, FEEDS } from "./config.js";
+import { type FeedId, FEED_IDS, FEEDS, feedDefinition } from "./config.js";
 import { buildStopEtas } from "./eta.js";
 import { buildRouteMapGeoJson } from "./geojson.js";
 import { getVehiclePositions, hasRealtime } from "./gtfsRealtime.js";
@@ -127,9 +127,6 @@ apiRouter.get("/rapid-bus/:category/vehicles", async (req, res, next) => {
 
 apiRouter.get("/rapid-bus/:category/map", async (req, res, next) => {
   bumpDay("routeViews");
-  if (typeof req.query.routeId === "string") {
-    bumpRoute(`${req.params.category}:${req.query.routeId}`);
-  }
   try {
     const { category } = categoryParamSchema.parse(req.params);
     const { routeId, direction } = mapQuerySchema.parse(req.query);
@@ -140,6 +137,13 @@ apiRouter.get("/rapid-bus/:category/map", async (req, res, next) => {
       res.status(404).json({ error: "Route not found", routeId });
       return;
     }
+
+    // Stats read like the app does: the route's code, not its feed-internal
+    // id (MRT feeder codes live in longName; shortName ships empty there).
+    bumpRoute(
+      `${category}:${routeId}`,
+      `${route.shortName || route.longName || routeId} \u00b7 ${feedDefinition(category).short}`
+    );
 
     const matchKeys = routeMatchKeys(route);
     const vehicles = (await getVehiclePositions(category, feed, routeId)).filter((vehicle) =>
