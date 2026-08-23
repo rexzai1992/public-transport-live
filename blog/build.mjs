@@ -31,7 +31,8 @@ const style = `<link rel="preconnect" href="https://fonts.googleapis.com"><link 
 }}
 *{box-sizing:border-box}
 body{background:var(--page);color:var(--ink);font:16px/1.75 Inter,-apple-system,"Segoe UI",sans-serif;margin:0;padding:28px 20px 72px}
-main{margin:0 auto;max-width:680px}
+main{margin:0 auto;max-width:760px}
+main.wide{max-width:1100px}
 .brand{align-items:center;display:flex;gap:12px;margin-bottom:26px;text-decoration:none}
 .brand-mark{align-items:center;background:var(--invert-bg);border-radius:12px;display:flex;flex:none;height:40px;justify-content:center;width:40px}
 .brand-copy b{color:var(--ink);display:block;font-size:16px;font-weight:700;letter-spacing:-0.01em}
@@ -64,19 +65,20 @@ blockquote{border-left:3px solid var(--edge-strong);color:var(--ink-2);margin:14
 .chip{background:var(--panel);border:1px solid var(--edge);border-radius:999px;color:var(--ink-2);font-size:12.5px;font-weight:600;padding:7px 14px}
 .chip b{color:var(--ink)}
 .hero-img{border:1px solid var(--edge);border-radius:var(--r-panel);box-shadow:var(--shadow);display:block;height:auto;margin:16px 0 2px;width:100%}
-.ggrid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.ggrid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
 .gcard{margin:0}
 .gcard img{border:1px solid var(--edge);border-radius:10px;display:block;margin-bottom:10px;width:100%;height:150px;object-fit:cover}
 </style>`;
 
-const page = (title, desc, canonical, body) => `<!doctype html>
+const pageWide = (title, desc, canonical, body) => page(title, desc, canonical, body, true);
+const page = (title, desc, canonical, body, wide = false) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title>
 <meta name="description" content="${desc}">
 <link rel="canonical" href="${canonical}">
 <link rel="alternate" type="application/rss+xml" href="${SITE}/rss.xml">
 <meta property="og:title" content="${title}"><meta property="og:description" content="${desc}">
-${style}</head><body><main>
+${style}</head><body><main${wide ? ' class="wide"' : ""}>
 <a class="brand" href="/">
   <span class="brand-mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M6 4h12a2.5 2.5 0 0 1 2.5 2.5v9a2.5 2.5 0 0 1-1.4 2.25v1.6a1.3 1.3 0 0 1-2.6 0v-1.1H7.5v1.1a1.3 1.3 0 0 1-2.6 0v-1.6A2.5 2.5 0 0 1 3.5 15.5v-9A2.5 2.5 0 0 1 6 4Z" fill="var(--invert-ink)"/><rect x="5.6" y="6.4" width="12.8" height="4.9" rx="1" fill="var(--invert-bg)"/><circle cx="7.9" cy="14.4" r="1.15" fill="var(--invert-bg)"/><circle cx="16.1" cy="14.4" r="1.15" fill="var(--invert-bg)"/></svg></span>
   <span class="brand-copy"><b>Public Transport Live</b><span>Malaysia · Singapore · Guides</span></span>
@@ -165,7 +167,7 @@ try {
 
 const thumb = (p) => (p.body.match(/\/img\/([a-z-]+\.webp)/) || [])[0] || "/img/klang-valley-rail.webp";
 
-writeFileSync(join(out, "index.html"), page(
+writeFileSync(join(out, "index.html"), pageWide(
   "Malaysia & Singapore Public Transport Guide",
   "Schedules, line guides and how-tos for KL and Singapore buses, MRT, LRT and KTM — from the makers of the Public Transport Live tracker.",
   `${SITE}/`,
