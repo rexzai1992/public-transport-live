@@ -85,4 +85,10 @@ writeFileSync(join(out, "rss.xml"),
 writeFileSync(join(out, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\n`);
 writeFileSync(join(out, "_headers"), `/*\n  Cache-Control: public, max-age=3600\n  X-Content-Type-Options: nosniff\n`);
 
-console.log(`built ${posts.length} posts -> dist/`);
+// Self-hosted map images (credited in each figure) ride along.
+mkdirSync(join(out, "img"), { recursive: true });
+for (const img of readdirSync(join(here, "img"))) {
+  writeFileSync(join(out, "img", img), readFileSync(join(here, "img", img)));
+}
+
+console.log(`built ${posts.length} posts + ${readdirSync(join(here, "img")).length} images -> dist/`);
