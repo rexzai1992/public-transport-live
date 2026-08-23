@@ -10,6 +10,7 @@ const state = {
   countdownTimer: null,
   nextRefreshAt: null,
   currentRoute: null,
+  detailLoading: false,
   currentStats: {
     stops: 0,
     shapes: 0,
@@ -97,7 +98,13 @@ const SAVED_KEY = "rapidbus.savedRoutes";
    hardcoded line list that goes stale when a line opens. Monorail and BRT
    match no chip and appear under All only. */
 function routeMode(route) {
-  if (route.category.startsWith("rapid-bus") || route.category === "sg-bus") return "bus";
+  if (
+    route.category.startsWith("rapid-bus") ||
+    route.category.startsWith("mybas-") ||
+    route.category === "sg-bus"
+  ) {
+    return "bus";
+  }
   if (route.category === "ktmb") return "ktm";
   if (route.category === "rapid-rail-kl" || route.category === "sg-rail") {
     if (/^MRT/i.test(route.longName)) return "mrt";
@@ -336,6 +343,8 @@ const followButton = document.getElementById("followButton");
 const refreshButton = document.getElementById("refreshButton");
 const locateButton = document.getElementById("locateButton");
 const recentBlock = document.getElementById("recentBlock");
+const savedBlock = document.getElementById("savedBlock");
+const savedAdd = document.getElementById("savedAdd");
 const recentRow = document.getElementById("recentRow");
 const closeDetails = document.getElementById("closeDetails");
 const themeToggle = document.getElementById("themeToggle");
@@ -384,8 +393,21 @@ function normalizeRoute(route, category) {
   const rawLong = String(route.longName || route.description || "").trim();
   const looksLikeCode = /^[A-Z]{0,3}\d{1,4}[A-Z]?$/i.test(rawLong);
 
-  const shortName = rawShort || (looksLikeCode ? rawLong : route.routeId);
-  const longName = rawShort || !looksLikeCode ? rawLong : `${labels[category]} route ${rawLong}`;
+  /* MyBus Ipoh and both Seremban concessions publish route_short_name IDENTICAL
+     to route_long_name — no code at all — and a badge cannot hold "STESEN BAS
+     MEDAN KIDD - BERCHAM VIA TAMAN IPOH". There the code lives in route_id
+     (A101A, N50, N10A), so fall back to it.
+
+     Only when the two names MATCH: feeds whose route_id is a meaningless serial
+     (Alor Setar's 30411, Kota Bharu's 30427) do publish a real short name, and
+     a length heuristic would wreck them — and wreck the rail line names
+     ("PUTRAJAYA LINE") that badgeLabel already handles. */
+  const shortDuplicatesLong =
+    Boolean(rawShort) && rawShort.toLowerCase() === rawLong.toLowerCase();
+  const usableShort = shortDuplicatesLong ? "" : rawShort;
+
+  const shortName = usableShort || (looksLikeCode ? rawLong : route.routeId);
+  const longName = usableShort || !looksLikeCode ? rawLong : `${labels[category]} route ${rawLong}`;
 
   return {
     routeId: route.routeId,
@@ -394,7 +416,11 @@ function normalizeRoute(route, category) {
     longName,
     description: String(route.description || "").trim(),
     color: route.color || null,
-    haystack: `${shortName} ${longName} ${route.description || ""} ${route.routeId}`.toLowerCase()
+    /* The feed label is in the haystack so a network can be found by name —
+       "mybas", "melaka", "penang" — not only by a route number you would have
+       to know already. "mybus" is included because three of these concessions
+       brand themselves that way and passengers say it. */
+    haystack: `${shortName} ${longName} ${route.description || ""} ${route.routeId} ${labels[category] || ""} ${category}${category.startsWith("mybas-") ? " mybus bas.my" : ""}`.toLowerCase()
   };
 }
 
@@ -439,6 +465,12 @@ function searchRoutes() {
   const token = ++searchToken;
   const query = routeSearch.value.trim().toLowerCase();
   clearSearch.classList.toggle("hidden", !query);
+
+  /* With a query on screen the results are the only thing that matters, so
+     Nearby / Saved / Recent stand down and the list starts right under the
+     search box instead of below three rows of chrome. */
+  document.body.classList.toggle("searching", Boolean(query));
+  sheetFollowSearch(Boolean(query));
 
   if (!indexReady) {
     renderRouteSkeletons();
@@ -607,10 +639,12 @@ function routeTitleLines(route) {
   };
 }
 
-/* The saved row: routes the user starred, plus a "+" that leads to the way
-   you save one — find it in search, open it, star it. Nothing hardcoded. */
+/* The saved row: routes the user starred. The "+" that explains how to save
+   one lives in the mode row, so an empty Saved list costs no vertical space —
+   on a half-open sheet every row here pushes the results off the bottom. */
 function renderSuggestions() {
   suggestRow.innerHTML = "";
+  let shown = 0;
 
   for (const item of loadSaved()) {
     const route = routeIndex.find((r) => r.routeId === item.routeId);
@@ -623,16 +657,10 @@ function renderSuggestions() {
     chip.innerHTML = `${escapeHtml(badgeLabel(route.shortName))} <small>${escapeHtml(shortLabels[route.category] || "")}</small>`;
     chip.addEventListener("click", () => selectRoute(route.routeId, route.category).catch(showError));
     suggestRow.appendChild(chip);
+    shown += 1;
   }
 
-  const add = document.createElement("button");
-  add.className = "chip add";
-  add.type = "button";
-  add.title = "Find a route, open it, then tap the star to save it here";
-  add.setAttribute("aria-label", "Add a saved route");
-  add.textContent = "+";
-  add.addEventListener("click", () => routeSearch.focus());
-  suggestRow.appendChild(add);
+  savedBlock.classList.toggle("hidden", shown === 0);
 }
 
 function renderRouteSkeletons(count = 6) {
@@ -667,7 +695,19 @@ async function selectRoute(routeId, category, options = {}) {
   highlightRouteButton(routeId);
   stopLiveRefresh();
 
-  const data = await getJson(mapUrl(routeId, state.direction));
+  // Show loading bones immediately — flashing "No route selected" at someone
+  // who just selected a route reads as failure, especially on a cold feed.
+  state.detailLoading = true;
+  renderRouteDetails();
+
+  let data;
+  try {
+    data = await getJson(mapUrl(routeId, state.direction));
+  } finally {
+    if (token === selectToken) {
+      state.detailLoading = false;
+    }
+  }
   if (token !== selectToken) {
     return;
   }
@@ -1462,6 +1502,28 @@ function renderRouteDetails() {
   const route = state.currentRoute;
 
   if (!route) {
+    if (state.detailLoading) {
+      routeDetails.innerHTML = `
+        <div class="detail-fixed">
+          <div class="detail-head">
+            <span class="sk sk-line" style="width: 46%; height: 20px"></span>
+            <span class="sk sk-line short" style="margin-top: 8px"></span>
+          </div>
+        </div>
+        <div class="detail-scroll">
+          ${Array.from({ length: 7 })
+            .map(
+              () => `
+                <div class="sk-row">
+                  <span class="sk sk-badge"></span>
+                  <span class="sk-lines"><span class="sk sk-line"></span><span class="sk sk-line short"></span></span>
+                </div>`
+            )
+            .join("")}
+        </div>
+      `;
+      return;
+    }
     routeDetails.innerHTML = `
       <div class="placeholder">
         <span class="placeholder-icon">
@@ -1501,19 +1563,25 @@ function renderRouteDetails() {
       </div>
 
       ${renderDirection()}
-
-      <div class="tabs" role="tablist">
-        <button type="button" class="tab${state.detailsTab === "arrivals" ? " active" : ""}" data-tab="arrivals">Arrivals</button>
-        <button type="button" class="tab${state.detailsTab === "stops" ? " active" : ""}" data-tab="stops">Stops <span class="tab-count">${state.currentStats.stops}</span></button>
-      </div>
-
-      ${renderFeedNotices()}
-
-      <div class="list-title">
-        <h3 class="cap">${state.detailsTab === "stops" ? "Route stops" : "Next arrivals"}</h3>
-        <small>${state.detailsTab === "stops" ? (state.live ? "live · else scheduled" : "scheduled (MYT)") : `auto-refresh ${LIVE_REFRESH_MS / 1000}s`}</small>
-      </div>
     </div>
+
+    <!-- Tabs and the list title are DIRECT children of .detail-body on purpose.
+         Inside .detail-fixed their sticky positioning was inert: a sticky box
+         cannot outlive its containing block, so both scrolled away with the
+         wrapper instead of pinning to the top of the pane. Out here their
+         containing block is the scroller itself, so they hold. -->
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab${state.detailsTab === "arrivals" ? " active" : ""}" data-tab="arrivals">Arrivals</button>
+      <button type="button" class="tab${state.detailsTab === "stops" ? " active" : ""}" data-tab="stops">Stops <span class="tab-count">${state.currentStats.stops}</span></button>
+    </div>
+
+    ${renderFeedNotices()}
+
+    <div class="list-title">
+      <h3 class="cap">${state.detailsTab === "stops" ? "Route stops" : "Next arrivals"}</h3>
+      <small>${state.detailsTab === "stops" ? (state.live ? "live · else scheduled" : "scheduled (MYT)") : `auto-refresh ${LIVE_REFRESH_MS / 1000}s`}</small>
+    </div>
+
     <div class="detail-scroll scroll">
       ${state.detailsTab === "arrivals" ? renderEtaList() : renderStopTimeline()}
     </div>
@@ -1777,8 +1845,13 @@ function followingWaits(props, limit = 2) {
 function stopTimeCell(props) {
   const minutes = Number(props.etaMinutes);
   const following = followingWaits(props);
-  const then = following.length
-    ? `<span class="stop-then">then ${following.map((w) => (w <= 0 ? "due" : w)).join(", ")} min</span>`
+  /* Only the next few hours are worth listing: on a sparse feed the raw list
+     ran to "then 635, 755 min", which is tomorrow and reads as a fault. */
+  const soon = following.filter((wait) => wait < 180).slice(0, 2);
+  const then = soon.length
+    ? `<span class="stop-then">then ${soon
+        .map((wait) => (wait <= 0 ? "due" : formatWaitShort(wait)))
+        .join(", ")}</span>`
     : "";
 
   if (Number.isFinite(minutes)) {
@@ -2043,9 +2116,28 @@ async function renderNearby(lat, lon) {
       const head = document.createElement("button");
       head.type = "button";
       head.className = "nearby-stop-head";
+      head.setAttribute("aria-expanded", "false");
       head.innerHTML = `${escapeHtml(titleCase(stopDisplayName(stop.name)))} <span class="nearby-dist">${formatDistance(stop.meters)}</span>`;
-      head.addEventListener("click", () => flyToVisible([stop.lat, stop.lon], Math.max(map.getZoom(), 16), { duration: 0.6 }));
+
+      /* Tapping the stop used to only pan the map, which answered nothing: the
+         chips below it are the next four departures, not the routes that call
+         here. Now it also opens the stop's full board — every route and
+         direction, soonest first — and each row selects that route so its line
+         and its live buses land on the map. */
+      const board = document.createElement("div");
+      board.className = "stop-board hidden";
       wrap.appendChild(head);
+      wrap.appendChild(board);
+
+      head.addEventListener("click", () => {
+        flyToVisible([stop.lat, stop.lon], Math.max(map.getZoom(), 16), { duration: 0.6 });
+        const opening = board.classList.contains("hidden");
+        head.setAttribute("aria-expanded", String(opening));
+        board.classList.toggle("hidden", !opening);
+        if (opening && !board.dataset.loaded) {
+          renderStopBoard(stop, board);
+        }
+      });
 
       const deps = document.createElement("div");
       deps.className = "nearby-deps";
@@ -2069,6 +2161,61 @@ async function renderNearby(lat, lon) {
     }
   } catch {
     block.classList.add("hidden");
+  }
+}
+
+/* One row per route AND direction: "towards Gombak" and "towards Putra
+   Heights" are the same route but not the same thing to stand and wait for.
+   A route with nothing left today still gets a row — "no more today" is an
+   answer the commuter needs as much as "4 min". */
+async function renderStopBoard(stop, container) {
+  container.dataset.loaded = "1";
+  container.innerHTML = '<div class="stop-board-note">Loading routes…</div>';
+
+  try {
+    const data = await getJson(`/api/stops/board?key=${encodeURIComponent(stop.key)}`);
+    const routes = data.routes || [];
+    if (!routes.length) {
+      container.innerHTML = '<div class="stop-board-note">No routes call here today.</div>';
+      return;
+    }
+
+    /* KL Sentral returns 16 rows, 8 of them finished for the day. Keeping every
+       dead one is honest but buries the three you can actually catch, so a few
+       stand as evidence that the route exists and the rest become a count. */
+    const live = routes.filter((entry) => entry.times.length);
+    const done = routes.filter((entry) => !entry.times.length);
+    const shown = [...live, ...done.slice(0, 3)];
+    const hidden = done.length - Math.min(done.length, 3);
+
+    container.innerHTML = "";
+    for (const entry of shown) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "stop-board-row";
+      const when = entry.times.length
+        ? entry.times.map((m) => (m === 0 ? "due" : `${m} min`)).join(" · ")
+        : "no more today";
+      row.innerHTML = `
+        <span class="badge small">${escapeHtml(badgeLabel(entry.route))}</span>
+        <span class="stop-board-copy">
+          <span class="stop-board-to">&rarr; ${escapeHtml(titleCase(stopDisplayName(entry.towards || entry.route)))}</span>
+          <span class="stop-board-when${entry.times.length ? "" : " dim"}">${escapeHtml(when)}</span>
+        </span>`;
+      row.addEventListener("click", () => selectRoute(entry.routeId, entry.feed).catch(showError));
+      container.appendChild(row);
+    }
+
+    if (hidden > 0) {
+      const note = document.createElement("div");
+      note.className = "stop-board-note";
+      note.textContent = `+${hidden} more finished for today`;
+      container.appendChild(note);
+    }
+  } catch (error) {
+    console.warn("stop board failed", error);
+    container.innerHTML = '<div class="stop-board-note">Could not load routes for this stop.</div>';
+    delete container.dataset.loaded; // let the next tap try again
   }
 }
 
@@ -2387,7 +2534,10 @@ function formatEtaShort(properties) {
   if (minutes <= 1) {
     return "Arriving";
   }
-  return `${minutes} min`;
+  /* Sparse networks — MyBus Ipoh runs a handful of trips a day — legitimately
+     produce waits of ten hours, and "635 min" is not something anyone can act
+     on. formatWaitShort already says "10h 35m"; it just was not used here. */
+  return formatWaitShort(minutes);
 }
 
 /* "Bus 423 · 2.5 km away · live" — uses etaDistanceMeters/etaMethod, which the
@@ -2653,6 +2803,14 @@ routeSearch.addEventListener("input", () => {
   searchDebounce = window.setTimeout(searchRoutes, 120);
 });
 
+routeSearch.addEventListener("focus", () => sheetFollowSearch(true));
+
+routeSearch.addEventListener("blur", () => {
+  if (!routeSearch.value.trim()) {
+    sheetFollowSearch(false);
+  }
+});
+
 routeSearch.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     window.clearTimeout(searchDebounce);
@@ -2663,6 +2821,8 @@ routeSearch.addEventListener("keydown", (event) => {
     searchRoutes();
   }
 });
+
+savedAdd.addEventListener("click", () => routeSearch.focus());
 
 document.getElementById("starRoute").addEventListener("click", () => {
   if (!state.activeRouteId) return;
@@ -2677,10 +2837,10 @@ document.querySelectorAll(".region-btn").forEach((btn) => {
   });
 });
 
-document.querySelectorAll("#modeRow .chip").forEach((chip) => {
+document.querySelectorAll("#modeRow .chip[data-mode]").forEach((chip) => {
   chip.addEventListener("click", () => {
     state.modeFilter = chip.dataset.mode;
-    document.querySelectorAll("#modeRow .chip").forEach((c) => c.classList.toggle("on", c === chip));
+    document.querySelectorAll("#modeRow .chip[data-mode]").forEach((c) => c.classList.toggle("on", c === chip));
     searchRoutes();
   });
 });
@@ -3796,6 +3956,31 @@ function applySheetState(next) {
   window.setTimeout(() => map.invalidateSize(), 260);
 }
 
+/* Searching on a phone needs the whole sheet. At half, brand + tabs + search
+   + filter row consume it all and the results render into a sliver behind the
+   footer — you type "ktm" and see nothing. Growing to full is only automatic
+   while the search is actually in use; a manual drag takes the wheel back. */
+let sheetAutoFull = false;
+
+function sheetFollowSearch(active) {
+  if (!sheetHandle || !rail || window.innerWidth > 1100) {
+    return;
+  }
+  if (active) {
+    if (sheetState !== "full") {
+      sheetAutoFull = true;
+      applySheetState("full");
+    }
+    return;
+  }
+  if (sheetAutoFull) {
+    sheetAutoFull = false;
+    if (sheetState === "full") {
+      applySheetState("half");
+    }
+  }
+}
+
 function nearestSnap(fraction) {
   let best = "half";
   let bestGap = Infinity;
@@ -3855,6 +4040,7 @@ function initSheet() {
       return;
     }
     dragging = false;
+    sheetAutoFull = false; // user took over; stop steering the sheet for them
     document.body.classList.remove("sheet-dragging");
 
     // A tap (barely moved) cycles instead of snapping to where it already is.
@@ -3902,19 +4088,41 @@ document.querySelectorAll(".view-tabs .tab").forEach((tab) => {
   tab.addEventListener("click", () => setView(tab.dataset.view));
 });
 
+/* The From/To fields have exactly the squeeze the route search had: on a half
+   sheet the summary, Recent trips, both fields, Leave and the Plan button use
+   up the height, so the stop suggestions render below the fold and picking a
+   place looks broken. Same answer — the sheet opens while a suggestion list is
+   live, and Recent trips steps aside so the results sit under the field. */
+function syncJourneySearchState() {
+  const active = jpFromResults.childElementCount > 0 || jpToResults.childElementCount > 0;
+  document.body.classList.toggle("jp-searching", active);
+  sheetFollowSearch(active);
+}
+
+/* Blur fires before the tap on a result lands, so an open list is never a
+   reason to collapse — only an empty one is. */
+function releaseJourneySheet() {
+  if (jpFromResults.childElementCount === 0 && jpToResults.childElementCount === 0) {
+    document.body.classList.remove("jp-searching");
+    sheetFollowSearch(false);
+  }
+}
+
 let jpFromDebounce = null;
 jpFrom.addEventListener("input", () => {
   state.journey.from = null;
   jpLocate.classList.remove("on");
   updatePlanButton();
   window.clearTimeout(jpFromDebounce);
-  jpFromDebounce = window.setTimeout(() => {
-    searchStopsFor(jpFrom.value, jpFromResults, (stop) => {
+  jpFromDebounce = window.setTimeout(async () => {
+    await searchStopsFor(jpFrom.value, jpFromResults, (stop) => {
       state.journey.from = { lat: stop.lat, lon: stop.lon, name: stop.name };
       jpFrom.value = titleCase(stop.name);
       jpFromResults.innerHTML = "";
       updatePlanButton();
+      syncJourneySearchState();
     });
+    syncJourneySearchState();
   }, 200);
 });
 
@@ -3923,15 +4131,22 @@ jpTo.addEventListener("input", () => {
   state.journey.to = null;
   updatePlanButton();
   window.clearTimeout(jpToDebounce);
-  jpToDebounce = window.setTimeout(() => {
-    searchStopsFor(jpTo.value, jpToResults, (stop) => {
+  jpToDebounce = window.setTimeout(async () => {
+    await searchStopsFor(jpTo.value, jpToResults, (stop) => {
       state.journey.to = stop;
       jpTo.value = titleCase(stop.name);
       jpToResults.innerHTML = "";
       updatePlanButton();
+      syncJourneySearchState();
     });
+    syncJourneySearchState();
   }, 200);
 });
+
+for (const field of [jpFrom, jpTo]) {
+  field.addEventListener("focus", () => sheetFollowSearch(true));
+  field.addEventListener("blur", releaseJourneySheet);
+}
 
 jpEdit.addEventListener("click", () => {
   setPlannerCollapsed(false);
@@ -3954,13 +4169,79 @@ jpOutput.addEventListener("click", (event) => {
 
 /* Offline support. The worker keeps timetables and route geometry, so the app
    still opens and shows saved data with no connection. */
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch((error) => {
-      console.warn("service worker registration failed", error);
+/* Read BEFORE the new worker can claim this page. Without it, the very first
+   install fires controllerchange too and a first-time visitor gets told there
+   is a new version of an app they just opened. */
+const hadServiceWorker = "serviceWorker" in navigator && Boolean(navigator.serviceWorker.controller);
+
+/* The shell is network-first, so a RELOAD always gets new code — but a page
+   that is never reloaded has no reason to. An installed PWA or a webview left
+   open can sit on an old build for days, which is how a bug that was fixed and
+   deployed still shows up on screen. This is the missing half: notice the new
+   build and offer one tap. (.update-prompt has been styled for this all along;
+   nothing ever created it.) */
+function offerReload() {
+  if (document.querySelector(".update-prompt")) {
+    return;
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "update-prompt";
+  button.textContent = "New version \u00b7 tap to refresh";
+  button.addEventListener("click", () => window.location.reload());
+  document.body.appendChild(button);
+}
+
+function watchForUpdates(registration) {
+  if (!registration) {
+    return;
+  }
+
+  // Something was already waiting when we registered: an update landed earlier.
+  if (registration.waiting && hadServiceWorker) {
+    offerReload();
+  }
+
+  registration.addEventListener("updatefound", () => {
+    const incoming = registration.installing;
+    if (!incoming) {
+      return;
+    }
+    incoming.addEventListener("statechange", () => {
+      if (incoming.state === "installed" && hadServiceWorker) {
+        offerReload();
+      }
     });
   });
 
+  /* sw.js calls skipWaiting(), so a new worker takes over without waiting for
+     tabs to close. At that moment this page is running the OLD script under a
+     NEW worker — precisely when it should say so. */
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hadServiceWorker) {
+      offerReload();
+    }
+  });
+
+  /* Checking once at startup misses the long-lived session this exists for. */
+  const check = () => registration.update().catch(() => {});
+  window.setInterval(check, 15 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      check();
+    }
+  });
+}
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then(watchForUpdates)
+      .catch((error) => {
+        console.warn("service worker registration failed", error);
+      });
+  });
 }
 
 
