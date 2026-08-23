@@ -5119,17 +5119,15 @@ function showInstallCard({ mode, onInstall }) {
              <li><span class="install-glyph">${shareGlyph}</span>Tap <b>Share</b> in Safari</li>
              <li><span class="install-glyph">${plusGlyph}</span>Choose <b>Add to Home Screen</b></li>
            </ol>`
-        : mode === "android-fallback"
-        ? `<a class="install-go" href="/download/ptlive.apk" download style="text-decoration:none;text-align:center">Get the Android app (APK)</a>
-           <ol class="install-steps">
-             <li><span class="install-glyph">${plusGlyph}</span>Or: menu <b>\u22ee</b> \u2192 <b>Add to Home screen</b></li>
-           </ol>`
+        : mode === "android" || mode === "android-fallback"
+        ? `<a class="install-go" href="/download/ptlive.apk" download style="text-decoration:none;text-align:center">Install app <b>(Android)</b></a>
+           <div class="install-sub">Best notifications &amp; reliability</div>
+           ${
+             mode === "android"
+               ? `<button type="button" class="install-alt" data-pwa>Or add to home screen (lite web app)</button>`
+               : `<div class="install-alt-note">Or: menu <b>\u22ee</b> \u2192 <b>Add to Home screen</b> for the lite web app</div>`
+           }`
         : `<button type="button" class="install-go">Install app</button>`
-    }
-    ${
-      /android/i.test(navigator.userAgent) && mode === "android"
-        ? `<a class="install-apk" href="/download/ptlive.apk" download>Or get the Android app <b>(APK)</b> for reliable alerts \u2192</a>`
-        : ""
     }
   `;
 
@@ -5139,6 +5137,12 @@ function showInstallCard({ mode, onInstall }) {
     window.setTimeout(() => card.remove(), 250);
   });
   card.querySelector(".install-go")?.addEventListener("click", () => {
+    onInstall?.();
+    // APK links (<a download>) navigate on their own; only the desktop/web
+    // button needs the card dismissed.
+    if (!card.querySelector(".install-go[href]")) card.remove();
+  });
+  card.querySelector("[data-pwa]")?.addEventListener("click", () => {
     onInstall?.();
     card.remove();
   });
