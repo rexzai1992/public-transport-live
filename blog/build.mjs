@@ -39,11 +39,11 @@ main.wide{max-width:1100px}
 .brand-copy b{color:var(--ink);display:block;font:700 16px Archivo,Inter,sans-serif;letter-spacing:-0.01em}
 .brand-copy span{color:var(--ink-3);font-size:10.5px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase}
 /* Night-map hero band */
-.hero-band{background:var(--night) url("/img/hero-banner.webp") center/cover no-repeat;border-radius:var(--r);margin:20px auto 0;max-width:1100px;overflow:hidden;position:relative}
+.hero-band{aspect-ratio:2.5/1;background:var(--night) url("/img/hero-banner.webp") center/contain no-repeat;border-radius:var(--r);margin:20px auto 0;max-width:1100px;min-height:300px;overflow:hidden;position:relative}
 .hero-band::after{background:linear-gradient(100deg, rgba(5,8,16,0.94) 0%, rgba(5,8,16,0.78) 42%, rgba(5,8,16,0.25) 100%);content:"";inset:0;position:absolute}
-.hero-inner{padding:56px 44px;position:relative;z-index:1}
+.hero-inner{padding:34px 40px;position:relative;z-index:1}
 .hero-inner .eyebrow{color:#8fc4ff;font:600 11.5px "JetBrains Mono",monospace;letter-spacing:0.16em;text-transform:uppercase}
-.hero-inner h1{color:var(--night-ink);font:800 clamp(30px,4.5vw,46px)/1.12 Archivo,Inter,sans-serif;letter-spacing:-0.02em;margin:10px 0 12px;max-width:15ch}
+.hero-inner h1{color:var(--night-ink);font:800 clamp(26px,3.4vw,36px)/1.12 Archivo,Inter,sans-serif;letter-spacing:-0.02em;margin:8px 0 10px;max-width:15ch}
 .hero-inner p{color:var(--night-ink2);font-size:16px;margin:0 0 22px;max-width:46ch}
 .cta{background:#7cc4ff;border-radius:11px;color:#04121f;display:inline-block;font-weight:700;margin-right:10px;padding:13px 24px;text-decoration:none}
 .cta.ghost{background:transparent;border:1.5px solid rgba(124,196,255,0.5);color:#cfe6ff}
