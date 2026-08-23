@@ -18,6 +18,7 @@ import { getSgStopArrivals } from "./sg/vehicles.js";
 import { getTrainAlerts, getPlatformCrowd } from "./sg/datamall.js";
 import { getAircraft, getFlightRoute, findFlight } from "./flights.js";
 import { getKlAlerts } from "./mtrec.js";
+import { registerToken, unregisterToken, pushToAll, tokenCount } from "./push.js";
 import { bumpVisit, bumpApi, bumpDay, bumpRoute, bumpActive, bumpTier, addFeedback, bumpInstall, bumpDevice, bumpGuideView, bumpFromGuide, visitTotal, getStats } from "./stats.js";
 import {
   categoryParamSchema,
@@ -334,11 +335,34 @@ apiRouter.get("/alerts", async (_req, res, next) => {
       });
     }
 
+    // Push once when the set of disruptions changes — riders learn of a new
+    // problem without opening the app. The digest guard prevents re-pushing
+    // the same advisory every poll.
+    void maybePushAlerts(alerts);
+
     res.json({ alerts });
   } catch (error) {
     next(error);
   }
 });
+
+let lastAlertDigest = "";
+let alertDigestPrimed = false;
+async function maybePushAlerts(alerts: { line: string; message: string }[]): Promise<void> {
+  const digest = alerts.map((a) => a.line + a.message).join("|");
+  if (digest === lastAlertDigest) return;
+  const previous = lastAlertDigest;
+  lastAlertDigest = digest;
+  // First observation after a restart just records state — don't blast a push
+  // for disruptions that were already ongoing before we started.
+  if (!alertDigestPrimed) {
+    alertDigestPrimed = true;
+    return;
+  }
+  if (!alerts.length || digest === previous) return;
+  const newest = alerts[0];
+  await pushToAll(`\u26a0 ${newest.line}`, newest.message).catch(() => {});
+}
 
 /* Live platform crowding for one SG rail line — the only real-time train
    data LTA publishes. Levels: l / m / h. */
@@ -353,7 +377,11 @@ apiRouter.get("/rapid-bus/sg-rail/crowd", async (req, res, next) => {
 
 /* Visitor counter and usage stats — aggregate numbers only, see stats.ts. */
 export function adminStats() {
-  return getStats();
+  return { ...getStats(), pushDevices: tokenCount() };
+}
+
+export async function sendAdminPush(title: string, body: string) {
+  return pushToAll(title, body);
 }
 
 apiRouter.get("/visit", (req, res) => {
@@ -373,6 +401,19 @@ apiRouter.get("/visit", (req, res) => {
 
 /* Fired by the static guide site (fetch no-cors); response body is never
    read, so the pinned CORS policy stays untouched. */
+apiRouter.get("/push/register", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const token = String(req.query.token ?? "");
+  registerToken(token);
+  res.json({ ok: true });
+});
+
+apiRouter.get("/push/unregister", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  unregisterToken(String(req.query.token ?? ""));
+  res.json({ ok: true });
+});
+
 apiRouter.get("/guide-view", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   const page = String(req.query.page ?? "").slice(0, 80);

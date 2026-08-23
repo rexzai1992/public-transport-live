@@ -3,7 +3,7 @@ import rateLimit from "express-rate-limit";
 import morgan from "morgan";
 import path from "node:path";
 import { ZodError } from "zod";
-import { apiRouter, adminStats, DEFAULT_JOURNEY_FEEDS } from "./routes.js";
+import { apiRouter, adminStats, sendAdminPush, DEFAULT_JOURNEY_FEEDS } from "./routes.js";
 import { seoRouter } from "./seo.js";
 import { timingSafeEqual } from "node:crypto";
 import { UpstreamError } from "./http.js";
@@ -117,6 +117,23 @@ app.get("/my-admin/data", (req, res) => {
   res.json(adminStats());
 });
 
+app.get("/my-admin/push", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.setHeader("Cache-Control", "no-store");
+  const title = String(req.query.title ?? "").slice(0, 80).trim();
+  const body = String(req.query.body ?? "").slice(0, 300).trim();
+  if (!title || !body) {
+    res.status(400).json({ error: "title and body required" });
+    return;
+  }
+  try {
+    const result = await sendAdminPush(title, body);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 app.get("/my-admin", (req, res) => {
   if (!requireAdmin(req, res)) return;
   res.setHeader("Cache-Control", "no-store");
@@ -172,6 +189,25 @@ td:last-child{font-variant-numeric:tabular-nums;text-align:right}
 
 <h2 id=fbh>Feedback</h2>
 <table id="fb"><tr><th>When (MYT)</th><th>Stars</th><th>Suggestion</th></tr></table>
+
+<h2>Send announcement</h2>
+<div class="panel">
+  <input id="pt" placeholder="Title (e.g. Service update)" maxlength="80" style="width:100%;margin-bottom:8px;padding:9px 12px;border:1px solid var(--rule);border-radius:8px;background:var(--card);color:var(--ink);font:inherit">
+  <textarea id="pb" placeholder="Message to all push devices…" maxlength="300" rows="2" style="width:100%;padding:9px 12px;border:1px solid var(--rule);border-radius:8px;background:var(--card);color:var(--ink);font:inherit"></textarea>
+  <button id="ps" style="margin-top:8px;background:var(--bar);border:0;border-radius:8px;color:#fff;cursor:pointer;font:inherit;font-weight:600;padding:9px 18px">Send to all devices</button>
+  <span id="pr" style="margin-left:10px;color:var(--ink2);font-size:12.5px"></span>
+</div>
+<script>
+document.getElementById("ps").addEventListener("click",async()=>{
+  const t=document.getElementById("pt").value.trim(),b=document.getElementById("pb").value.trim();
+  if(!t||!b){document.getElementById("pr").textContent="title + message needed";return;}
+  document.getElementById("pr").textContent="sending…";
+  try{const r=await fetch("/my-admin/push?title="+encodeURIComponent(t)+"&body="+encodeURIComponent(b));const j=await r.json();
+    document.getElementById("pr").textContent=r.ok?("sent to "+j.sent+", failed "+j.failed):("error: "+(j.error||r.status));
+    if(r.ok){document.getElementById("pt").value="";document.getElementById("pb").value="";}
+  }catch(e){document.getElementById("pr").textContent="failed";}
+});
+</script>
 
 <h2>Guide pages — most read</h2>
 <table id="gp"><tr><th>Page</th><th>Views</th></tr></table>
@@ -229,7 +265,8 @@ fetch("/my-admin/data").then((r)=>r.json()).then((d)=>{
     ["PWA devices (all time)",d.pwaDevices||0],["APK devices (all time)",d.apkDevices||0],
     ["PWA installs seen",d.pwaInstalls||0],["PWA visits today",t.pwa||0],["APK visits today",t.apk||0],
     ["Browser visits today",Math.max(0,(t.visits||0)-(t.pwa||0)-(t.apk||0))],
-    ["Guide views today",t.guideViews||0],["Came from guide",t.fromGuide||0]];
+    ["Guide views today",t.guideViews||0],["Came from guide",t.fromGuide||0],
+    ["Push devices",d.pushDevices||0]];
   document.getElementById("cards").innerHTML=cards.map(([k,v])=>"<div class=card><b>"+(typeof v==="number"?v.toLocaleString():v)+"</b><span>"+k+"</span></div>").join("");
   document.getElementById("chart").innerHTML=days.length?chart(days):"<span style=color:var(--ink2);font-size:12px>no days yet</span>";
   document.getElementById("fbh").textContent="Feedback"+(d.feedbackCount?" \u2014 "+d.feedbackAvg+"\u2605 avg \u00b7 "+d.feedbackCount+" total":"");
