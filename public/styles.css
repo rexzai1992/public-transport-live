@@ -2633,6 +2633,35 @@ body.mode-rail .legend-rail {
   font-weight: 700;
 }
 
+.alert-close {
+  background: transparent;
+  border: 0;
+  color: var(--ink-2);
+  cursor: pointer;
+  float: right;
+  font-size: 16px;
+  line-height: 1;
+  margin-left: var(--sp-2);
+  padding: 0 2px;
+}
+
+/* Line-level advisory: the warning lives on the line, not just in a banner. */
+.warn-dot {
+  color: #d97706;
+  font-size: 12px;
+}
+
+.route-advisory {
+  background: color-mix(in srgb, #d97706 14%, transparent);
+  border-left: 3px solid #d97706;
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin: 0 var(--sp-5) var(--sp-3);
+  padding: 8px 12px;
+  border-radius: 0 8px 8px 0;
+}
+
 /* Platform crowd tag on SG rail stop rows. Low stays silent. */
 .crowd-dot {
   border-radius: 6px;

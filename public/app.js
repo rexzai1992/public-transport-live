@@ -23,6 +23,8 @@ const state = {
   detailsTab: "stops",
   userLocation: null,
   modeFilter: "all",
+  alertsByRoute: new Map(),
+  alertTimer: null,
   region: "my",
   userMarker: null,
   accuracyCircle: null,
@@ -581,10 +583,11 @@ function renderRouteResults(matches, query) {
     button.type = "button";
     button.dataset.routeId = route.routeId;
     button.dataset.category = route.category;
+    const advisory = state.alertsByRoute.get(`${route.category}:${route.routeId}`);
     button.innerHTML = `
       <span class="badge">${escapeHtml(badgeLabel(route.shortName))}</span>
       <span class="route-copy">
-        <span class="route-origin clip">${escapeHtml(parts.primary)}</span>
+        <span class="route-origin clip">${advisory ? `<span class="warn-dot" title="Service advisory">\u26a0</span> ` : ""}${escapeHtml(parts.primary)}</span>
         ${parts.secondary ? `<span class="route-dest clip">${escapeHtml(parts.secondary)}</span>` : ""}
         <span class="route-meta clip">${escapeHtml(labels[route.category] || route.category)} · ${escapeHtml(route.routeId)}</span>
       </span>
@@ -1498,6 +1501,11 @@ async function annotateCrowd() {
   }
 }
 
+function activeRouteAdvisory() {
+  if (!state.currentRoute) return null;
+  return state.alertsByRoute.get(`${state.category}:${state.currentRoute.routeId}`) ?? null;
+}
+
 function renderRouteDetails() {
   const route = state.currentRoute;
 
@@ -1554,6 +1562,8 @@ function renderRouteDetails() {
         </div>
         <div class="detail-sub">${escapeHtml(labels[state.category] || state.category)} · ${escapeHtml(route.routeId)}</div>
       </div>
+
+      ${activeRouteAdvisory() ? `<div class="route-advisory">\u26a0 ${escapeHtml(activeRouteAdvisory())}</div>` : ""}
 
       <div class="stats">
         <div class="stat"><span class="stat-value">${state.currentStats.stops}</span><span class="stat-label">Stops</span></div>
@@ -4386,14 +4396,44 @@ async function refreshAlerts() {
   try {
     const data = await getJson("/api/alerts");
     const alerts = data.alerts || [];
-    if (!alerts.length) {
-      strip.classList.add("hidden");
-      return;
+
+    // Per-route index, so affected lines carry their warning everywhere.
+    state.alertsByRoute = new Map();
+    for (const alert of alerts) {
+      for (const route of alert.routes || []) {
+        state.alertsByRoute.set(`${route.category}:${route.routeId}`, alert.message);
+      }
     }
-    strip.innerHTML = alerts
-      .map((a) => `<b>${escapeHtml(a.line)}</b> ${escapeHtml(a.message)}`)
-      .join("<br>");
-    strip.classList.remove("hidden");
+
+    /* The banner announces; the per-line markers persist. It shows for a
+       few seconds per NEW advisory (tracked by content), then gets out of
+       the way — dismissing early is remembered for the session. */
+    const digest = alerts.map((a) => a.line + a.message).join("|");
+    let seen = "";
+    try {
+      seen = sessionStorage.getItem("rapidbus.alertSeen") || "";
+    } catch { /* no storage: show every time, better than never */ }
+
+    if (!alerts.length || digest === seen) {
+      strip.classList.add("hidden");
+    } else {
+      strip.innerHTML =
+        alerts.map((a) => `<b>${escapeHtml(a.line)}</b> ${escapeHtml(a.message)}`).join("<br>") +
+        `<button type="button" class="alert-close" aria-label="Dismiss">\u00d7</button>`;
+      strip.classList.remove("hidden");
+      const dismiss = () => {
+        strip.classList.add("hidden");
+        try {
+          sessionStorage.setItem("rapidbus.alertSeen", digest);
+        } catch { /* optional */ }
+      };
+      strip.querySelector(".alert-close").addEventListener("click", dismiss);
+      window.clearTimeout(state.alertTimer);
+      state.alertTimer = window.setTimeout(dismiss, 12000);
+    }
+    // Re-render so markers appear without waiting for the next user action.
+    if (indexReady) searchRoutes();
+    if (state.currentRoute) renderRouteDetails();
   } catch {
     /* keep whatever is shown */
   }

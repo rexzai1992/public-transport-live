@@ -297,7 +297,44 @@ apiRouter.get("/rapid-bus/sg-bus/arrivals", async (req, res, next) => {
 apiRouter.get("/alerts", async (_req, res, next) => {
   try {
     const [sg, kl] = await Promise.all([getTrainAlerts(), getKlAlerts()]);
-    res.json({ alerts: [...kl, ...sg] });
+
+    /* Attach the affected routes so the app can flag them in the route list
+       and inside the route's own page — a banner warns, a marked line
+       explains. MTREC's KA_/KC_ Komuter ids map to the KTMB lines; its other
+       ids match rapid-rail-kl short names; LTA's codes match sg-rail ids. */
+    const alerts: { line: string; message: string; routes: { category: string; routeId: string }[] }[] = [];
+
+    const klFeed = await getStaticFeed("rapid-rail-kl").catch(() => null);
+    const ktmb = await getStaticFeed("ktmb").catch(() => null);
+    for (const alert of kl) {
+      const routes: { category: string; routeId: string }[] = [];
+      if (klFeed) {
+        for (const route of klFeed.routes.values()) {
+          if ((route.shortName || route.routeId) === alert.lineId) {
+            routes.push({ category: "rapid-rail-kl", routeId: route.routeId });
+          }
+        }
+      }
+      if (ktmb && /Komuter/i.test(alert.lineId)) {
+        const wanted = alert.lineId.startsWith("KA") ? "Port Klang" : alert.lineId.startsWith("KC") ? "Seremban" : "";
+        for (const route of ktmb.routes.values()) {
+          if (wanted && (route.shortName || "").includes(wanted)) {
+            routes.push({ category: "ktmb", routeId: route.routeId });
+          }
+        }
+      }
+      alerts.push({ line: alert.line, message: alert.message, routes });
+    }
+
+    for (const alert of sg) {
+      alerts.push({
+        line: alert.line,
+        message: alert.message,
+        routes: [{ category: "sg-rail", routeId: alert.line }]
+      });
+    }
+
+    res.json({ alerts });
   } catch (error) {
     next(error);
   }
