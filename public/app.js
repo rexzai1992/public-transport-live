@@ -2971,6 +2971,21 @@ clearSearch.addEventListener("click", () => {
 });
 
 closeDetails.addEventListener("click", () => {
+  // In journey mode the same ✕ closes the planned route: clear the timeline,
+  // its map layers and any tracking, and return to the From/To inputs.
+  if (document.body.classList.contains("has-journey")) {
+    if (state.journey.tracking) stopJourneyTracking();
+    clearJourneyReminders();
+    clearJourneyLayers();
+    state.journey.results = [];
+    state.journey.selected = 0;
+    document.body.classList.remove("has-journey");
+    setPlannerCollapsed(false);
+    setStatus("Ready", "idle");
+    window.setTimeout(() => map.invalidateSize(), 220);
+    return;
+  }
+
   state.activeRouteId = null;
   state.currentRoute = null;
   state.currentStops = [];
