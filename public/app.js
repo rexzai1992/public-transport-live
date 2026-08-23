@@ -4326,6 +4326,42 @@ function compactCount(n) {
   }
 })();
 
+/* Session engagement: count only VISIBLE seconds (a background tab is not
+   usage), report chunks whenever the page hides, and mark each engagement
+   tier once as it is crossed. Aggregate seconds only — nothing identifies
+   the session. */
+(function trackEngagement() {
+  let activeSec = 0;
+  let unsentSec = 0;
+  const tiers = [
+    { at: 30, name: "30s", sent: false },
+    { at: 180, name: "3m", sent: false },
+    { at: 600, name: "10m", sent: false }
+  ];
+
+  window.setInterval(() => {
+    if (document.visibilityState !== "visible") return;
+    activeSec += 5;
+    unsentSec += 5;
+    for (const tier of tiers) {
+      if (!tier.sent && activeSec >= tier.at) {
+        tier.sent = true;
+        fetch(apiUrl(`/api/session?tier=${tier.name}`), { keepalive: true }).catch(() => {});
+      }
+    }
+  }, 5000);
+
+  const flush = () => {
+    if (unsentSec < 5) return;
+    fetch(apiUrl(`/api/session?sec=${unsentSec}`), { keepalive: true }).catch(() => {});
+    unsentSec = 0;
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flush();
+  });
+  window.addEventListener("pagehide", flush);
+})();
+
 /* Disruption strip: checked on load and every three minutes. Only rendered
    when something is actually wrong — an empty banner is noise. */
 async function refreshAlerts() {

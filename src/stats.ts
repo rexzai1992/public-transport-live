@@ -11,6 +11,12 @@ type DayStats = {
   journeys: number;
   nearby: number;
   flights: number;
+  /** Seconds of visible, foreground use across all sessions. */
+  activeSec: number;
+  /** Sessions that stayed at least 30 s / 3 min / 10 min — each counted once. */
+  s30: number;
+  s3m: number;
+  s10m: number;
 };
 
 type Stats = {
@@ -24,7 +30,7 @@ const DATA_DIR = new URL("../data/", import.meta.url);
 const STATS_FILE = new URL("../data/stats.json", import.meta.url);
 const LEGACY_VISITS_FILE = new URL("../data/visits.json", import.meta.url);
 
-const EMPTY_DAY: DayStats = { visits: 0, api: 0, routeViews: 0, journeys: 0, nearby: 0, flights: 0 };
+const EMPTY_DAY: DayStats = { visits: 0, api: 0, routeViews: 0, journeys: 0, nearby: 0, flights: 0, activeSec: 0, s30: 0, s3m: 0, s10m: 0 };
 
 function load(): Stats {
   try {
@@ -75,6 +81,13 @@ function today(): string {
 function day(): DayStats {
   const key = today();
   let entry = stats.days[key];
+  if (entry) {
+    // Days recorded before these fields existed must not NaN the sums.
+    entry.activeSec ??= 0;
+    entry.s30 ??= 0;
+    entry.s3m ??= 0;
+    entry.s10m ??= 0;
+  }
   if (!entry) {
     entry = { ...EMPTY_DAY };
     stats.days[key] = entry;
@@ -101,6 +114,19 @@ export function bumpApi(): void {
 
 export function bumpDay(field: "routeViews" | "journeys" | "nearby" | "flights"): void {
   day()[field] += 1;
+  persist();
+}
+
+export function bumpActive(seconds: number): void {
+  day().activeSec += Math.max(0, Math.min(600, Math.round(seconds)));
+  persist();
+}
+
+export function bumpTier(tier: "30s" | "3m" | "10m"): void {
+  const entry = day();
+  if (tier === "30s") entry.s30 += 1;
+  else if (tier === "3m") entry.s3m += 1;
+  else entry.s10m += 1;
   persist();
 }
 

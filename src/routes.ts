@@ -17,7 +17,7 @@ import { planJourney, searchStops, nearbyDepartures, stopBoard } from "./journey
 import { getSgStopArrivals } from "./sg/vehicles.js";
 import { getTrainAlerts, getPlatformCrowd } from "./sg/datamall.js";
 import { getAircraft, getFlightRoute, findFlight } from "./flights.js";
-import { bumpVisit, bumpApi, bumpDay, bumpRoute, visitTotal, getStats } from "./stats.js";
+import { bumpVisit, bumpApi, bumpDay, bumpRoute, bumpActive, bumpTier, visitTotal, getStats } from "./stats.js";
 import {
   categoryParamSchema,
   journeySchema,
@@ -25,7 +25,7 @@ import {
   mapQuerySchema,
   routeParamSchema,
   routeSearchSchema,
-  vehicleQuerySchema, nearbySchema, stopBoardSchema, sgArrivalSchema, crowdSchema, flightsSchema, flightRouteSchema } from "./validators.js";
+  vehicleQuerySchema, nearbySchema, stopBoardSchema, sgArrivalSchema, crowdSchema, flightsSchema, flightRouteSchema, sessionSchema } from "./validators.js";
 
 export const apiRouter = Router();
 
@@ -313,6 +313,21 @@ export function adminStats() {
 apiRouter.get("/visit", (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.json({ visits: bumpVisit() });
+});
+
+/* Session heartbeat: the page reports chunks of visible-use seconds when it
+   goes to background, and one tick per engagement tier crossed. GET so the
+   pinned CORS setup stays untouched; no-store so nginx never caches it. */
+apiRouter.get("/session", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const { sec, tier } = sessionSchema.parse(req.query);
+    if (sec) bumpActive(sec);
+    if (tier) bumpTier(tier);
+  } catch {
+    /* malformed beacons are dropped, not errored — sendBeacon can't retry */
+  }
+  res.status(204).end();
 });
 
 apiRouter.get("/stats", (_req, res) => {

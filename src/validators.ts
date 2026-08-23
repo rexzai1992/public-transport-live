@@ -73,3 +73,8 @@ export const flightsSchema = z.object({
 export const flightRouteSchema = z.object({
   callsign: z.string().trim().regex(/^[A-Z0-9]{3,8}$/i)
 });
+
+export const sessionSchema = z.object({
+  sec: z.coerce.number().min(0).max(600).optional(),
+  tier: z.enum(["30s", "3m", "10m"]).optional()
+});
