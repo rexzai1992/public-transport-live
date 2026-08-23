@@ -11,7 +11,7 @@ type MtrecRow = {
   Remark?: string;
 };
 
-export type KlAlert = { lineId: string; line: string; message: string };
+export type KlAlert = { lineId: string; line: string; message: string; severe: boolean };
 
 let cache: { expiresAt: number; alerts: KlAlert[] } | null = null;
 
@@ -36,7 +36,10 @@ export async function getKlAlerts(): Promise<KlAlert[]> {
       .map((row) => ({
         lineId: row.LineID || "",
         line: row.Line || row.LineID || "Rail",
-        message: [row.Status, row.Remark].filter(Boolean).join(" — ")
+        message: [row.Status, row.Remark].filter(Boolean).join(" — "),
+        // A full suspension is anything worse than "Degraded Service" — no/
+        // suspended/disrupted service. Degraded (slower, minor) is not severe.
+        severe: !/degraded/i.test(String(row.Status || ""))
       }));
     cache = { expiresAt: Date.now() + 2 * 60 * 1000, alerts };
     return alerts;
