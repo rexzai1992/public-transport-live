@@ -17,7 +17,7 @@ import { planJourney, searchStops, nearbyDepartures, stopBoard } from "./journey
 import { getSgStopArrivals } from "./sg/vehicles.js";
 import { getTrainAlerts, getPlatformCrowd } from "./sg/datamall.js";
 import { getAircraft, getFlightRoute, findFlight } from "./flights.js";
-import { bumpVisit, bumpApi, bumpDay, bumpRoute, bumpActive, bumpTier, visitTotal, getStats } from "./stats.js";
+import { bumpVisit, bumpApi, bumpDay, bumpRoute, bumpActive, bumpTier, addFeedback, bumpInstall, visitTotal, getStats } from "./stats.js";
 import {
   categoryParamSchema,
   journeySchema,
@@ -25,7 +25,7 @@ import {
   mapQuerySchema,
   routeParamSchema,
   routeSearchSchema,
-  vehicleQuerySchema, nearbySchema, stopBoardSchema, sgArrivalSchema, crowdSchema, flightsSchema, flightRouteSchema, sessionSchema } from "./validators.js";
+  vehicleQuerySchema, nearbySchema, stopBoardSchema, sgArrivalSchema, crowdSchema, flightsSchema, flightRouteSchema, sessionSchema, feedbackSchema } from "./validators.js";
 
 export const apiRouter = Router();
 
@@ -317,9 +317,13 @@ export function adminStats() {
   return getStats();
 }
 
-apiRouter.get("/visit", (_req, res) => {
+apiRouter.get("/visit", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  res.json({ visits: bumpVisit() });
+  const src = req.query.src === "pwa" || req.query.src === "apk" ? String(req.query.src) : undefined;
+  if (req.query.installed === "1") {
+    bumpInstall();
+  }
+  res.json({ visits: bumpVisit(src) });
 });
 
 /* Session heartbeat: the page reports chunks of visible-use seconds when it
@@ -335,6 +339,20 @@ apiRouter.get("/session", (req, res) => {
     /* malformed beacons are dropped, not errored — sendBeacon can't retry */
   }
   res.status(204).end();
+});
+
+/* In-app rating + improvement note. GET keeps the pinned CORS untouched;
+   the message is length-capped and stored as plain text for the admin panel
+   only — never republished anywhere. */
+apiRouter.get("/feedback", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const { stars, msg } = feedbackSchema.parse(req.query);
+    addFeedback(stars, msg);
+    res.status(204).end();
+  } catch {
+    res.status(400).json({ error: "stars 1-5, msg up to 500 chars" });
+  }
 });
 
 apiRouter.get("/stats", (_req, res) => {

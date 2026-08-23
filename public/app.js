@@ -4315,7 +4315,12 @@ function compactCount(n) {
   if (!el) return;
   try {
     const fresh = !sessionStorage.getItem("rapidbus.visited");
-    const data = await getJson(fresh ? "/api/visit" : "/api/stats");
+    const surface = window.Capacitor?.isNativePlatform?.()
+      ? "apk"
+      : window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true
+        ? "pwa"
+        : "web";
+    const data = await getJson(fresh ? `/api/visit?src=${surface}` : "/api/stats");
     if (fresh) sessionStorage.setItem("rapidbus.visited", "1");
     if (Number.isFinite(data.visits) && data.visits > 0) {
       el.textContent = compactCount(data.visits);
@@ -4502,6 +4507,113 @@ ensureRouteIndex(bootRoute ? { thenSelect: bootRoute } : {});
 })();
 
 /* ------------------------------------------------------------------------ */
+/* Rate & improve — asked only of people who demonstrably use the app.       */
+/* Rules: 5+ sessions on this device, shown after 30 s of active use in the  */
+/* session, never while a journey is being tracked. Submitting ends it       */
+/* forever; dismissing waits 14 days AND 5 more sessions; three dismissals   */
+/* and it never asks again.                                                  */
+/* ------------------------------------------------------------------------ */
+
+(function rateAndImprove() {
+  const K = {
+    sessions: "rapidbus.sessions",
+    done: "rapidbus.rated",
+    asks: "rapidbus.rateAsks",
+    lastAsk: "rapidbus.rateLastAsk",
+    sinceAsk: "rapidbus.sessionsSinceAsk"
+  };
+  let store;
+  try {
+    store = localStorage;
+    // One tick per browsing session.
+    if (!sessionStorage.getItem("rapidbus.sessionCounted")) {
+      sessionStorage.setItem("rapidbus.sessionCounted", "1");
+      store.setItem(K.sessions, String(Number(store.getItem(K.sessions) || 0) + 1));
+      store.setItem(K.sinceAsk, String(Number(store.getItem(K.sinceAsk) || 0) + 1));
+    }
+  } catch {
+    return; // no storage, no prompt — better silent than nagging every visit
+  }
+
+  const eligible = () =>
+    !store.getItem(K.done) &&
+    Number(store.getItem(K.sessions) || 0) >= 5 &&
+    Number(store.getItem(K.asks) || 0) < 3 &&
+    Number(store.getItem(K.sinceAsk) || 0) >= 5 &&
+    Date.now() - Number(store.getItem(K.lastAsk) || 0) > 14 * 24 * 3600 * 1000 &&
+    !state.journey.tracking;
+
+  function show() {
+    if (document.getElementById("rateCard")) return;
+    const card = document.createElement("div");
+    card.id = "rateCard";
+    card.className = "install-card rate-card";
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-label", "Rate the app");
+    card.innerHTML = `
+      <button type="button" class="install-close" aria-label="Not now">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <div class="install-copy">
+        <strong>Enjoying Public Transport Live?</strong>
+        <span>A rating and one idea help improve the app</span>
+      </div>
+      <div class="rate-stars" role="radiogroup" aria-label="Stars">
+        ${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="rate-star" data-n="${n}" aria-label="${n} star${n > 1 ? "s" : ""}">\u2606</button>`).join("")}
+      </div>
+      <textarea class="rate-msg" maxlength="500" rows="2" placeholder="What should we improve? (optional)"></textarea>
+      <button type="button" class="install-go rate-send" disabled>Send</button>
+    `;
+
+    let stars = 0;
+    const paint = () => card.querySelectorAll(".rate-star").forEach((b, i) => {
+      b.textContent = i < stars ? "\u2605" : "\u2606";
+      b.classList.toggle("on", i < stars);
+    });
+    card.querySelectorAll(".rate-star").forEach((b) =>
+      b.addEventListener("click", () => {
+        stars = Number(b.dataset.n);
+        paint();
+        card.querySelector(".rate-send").disabled = false;
+      })
+    );
+
+    const dismiss = () => {
+      store.setItem(K.asks, String(Number(store.getItem(K.asks) || 0) + 1));
+      store.setItem(K.lastAsk, String(Date.now()));
+      store.setItem(K.sinceAsk, "0");
+      card.classList.remove("show");
+      window.setTimeout(() => card.remove(), 250);
+    };
+    card.querySelector(".install-close").addEventListener("click", dismiss);
+
+    card.querySelector(".rate-send").addEventListener("click", async () => {
+      const msg = card.querySelector(".rate-msg").value.trim();
+      card.querySelector(".rate-send").disabled = true;
+      try {
+        await getJson(`/api/feedback?stars=${stars}${msg ? `&msg=${encodeURIComponent(msg)}` : ""}`).catch(() => {});
+      } finally {
+        store.setItem(K.done, "1");
+        card.querySelector(".install-copy strong").textContent = "Terima kasih! \ud83d\ude4f";
+        card.querySelector(".install-copy span").textContent = "Your feedback reached the developer.";
+        card.querySelectorAll(".rate-stars,.rate-msg,.rate-send").forEach((el) => el.remove());
+        window.setTimeout(() => {
+          card.classList.remove("show");
+          window.setTimeout(() => card.remove(), 250);
+        }, 2200);
+      }
+    });
+
+    document.body.appendChild(card);
+    requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add("show")));
+  }
+
+  window.setTimeout(() => {
+    if (eligible()) show();
+  }, 30000);
+})();
+
+/* ------------------------------------------------------------------------ */
 /* PWA install — offer the home-screen prompt instead of hoping the user     */
 /* finds it in the browser menu.                                             */
 /* ------------------------------------------------------------------------ */
@@ -4602,6 +4714,8 @@ window.addEventListener("beforeinstallprompt", (event) => {
 window.addEventListener("appinstalled", () => {
   document.getElementById("installCard")?.remove();
   markInstallDismissed();
+  // Count the install itself, once.
+  fetch(apiUrl("/api/visit?installed=1"), { keepalive: true }).catch(() => {});
 });
 
 /* iOS Safari never fires beforeinstallprompt; the best that exists is telling

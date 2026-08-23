@@ -13,6 +13,9 @@ type DayStats = {
   flights: number;
   /** Seconds of visible, foreground use across all sessions. */
   activeSec: number;
+  /** Visits arriving from an installed surface. */
+  pwa: number;
+  apk: number;
   /** Sessions that stayed at least 30 s / 3 min / 10 min — each counted once. */
   s30: number;
   s3m: number;
@@ -26,19 +29,23 @@ type Stats = {
   routes: Record<string, number>;
   /** Display name per route key, recorded when the route is opened. */
   routeNames: Record<string, string>;
+  /** In-app ratings and improvement suggestions, newest last, capped. */
+  feedback: { at: string; stars: number; msg?: string }[];
+  /** Home-screen installs observed (Chromium appinstalled events). */
+  pwaInstalls: number;
 };
 
 const DATA_DIR = new URL("../data/", import.meta.url);
 const STATS_FILE = new URL("../data/stats.json", import.meta.url);
 const LEGACY_VISITS_FILE = new URL("../data/visits.json", import.meta.url);
 
-const EMPTY_DAY: DayStats = { visits: 0, api: 0, routeViews: 0, journeys: 0, nearby: 0, flights: 0, activeSec: 0, s30: 0, s3m: 0, s10m: 0 };
+const EMPTY_DAY: DayStats = { visits: 0, api: 0, routeViews: 0, journeys: 0, nearby: 0, flights: 0, activeSec: 0, s30: 0, s3m: 0, s10m: 0, pwa: 0, apk: 0 };
 
 function load(): Stats {
   try {
     const parsed = JSON.parse(readFileSync(STATS_FILE, "utf-8")) as Stats;
     if (parsed && typeof parsed.visits === "number") {
-      return { ...parsed, days: parsed.days ?? {}, routes: parsed.routes ?? {}, routeNames: parsed.routeNames ?? {} };
+      return { ...parsed, days: parsed.days ?? {}, routes: parsed.routes ?? {}, routeNames: parsed.routeNames ?? {}, feedback: parsed.feedback ?? [], pwaInstalls: parsed.pwaInstalls ?? 0 };
     }
   } catch {
     /* first run, or the file is gone */
@@ -55,7 +62,9 @@ function load(): Stats {
     visits: legacyVisits,
     days: {},
     routes: {},
-    routeNames: {}
+    routeNames: {},
+    feedback: [],
+    pwaInstalls: 0
   };
 }
 
@@ -90,6 +99,8 @@ function day(): DayStats {
     entry.s30 ??= 0;
     entry.s3m ??= 0;
     entry.s10m ??= 0;
+    entry.pwa ??= 0;
+    entry.apk ??= 0;
   }
   if (!entry) {
     entry = { ...EMPTY_DAY };
@@ -103,11 +114,19 @@ function day(): DayStats {
   return entry;
 }
 
-export function bumpVisit(): number {
+export function bumpVisit(src?: string): number {
   stats.visits += 1;
-  day().visits += 1;
+  const entry = day();
+  entry.visits += 1;
+  if (src === "pwa") entry.pwa += 1;
+  else if (src === "apk") entry.apk += 1;
   persist();
   return stats.visits;
+}
+
+export function bumpInstall(): void {
+  stats.pwaInstalls += 1;
+  persist();
 }
 
 export function bumpApi(): void {
@@ -151,6 +170,18 @@ export function bumpRoute(key: string, name?: string): void {
   persist();
 }
 
+export function addFeedback(stars: number, msg?: string): void {
+  stats.feedback.push({
+    at: new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 16).replace("T", " "),
+    stars,
+    msg: msg?.slice(0, 500) || undefined
+  });
+  if (stats.feedback.length > 200) {
+    stats.feedback = stats.feedback.slice(-200);
+  }
+  persist();
+}
+
 export function visitTotal(): number {
   return stats.visits;
 }
@@ -165,6 +196,12 @@ export function getStats() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 15)
       .map(([key, count]) => ({ key, name: stats.routeNames[key] ?? key, count })),
+    pwaInstalls: stats.pwaInstalls,
+    feedback: stats.feedback.slice(-40).reverse(),
+    feedbackAvg: stats.feedback.length
+      ? Math.round((stats.feedback.reduce((sum, f) => sum + f.stars, 0) / stats.feedback.length) * 10) / 10
+      : null,
+    feedbackCount: stats.feedback.length,
     uptimeSeconds: Math.round(process.uptime()),
     memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     /* Zone boundaries for the admin gauges. Memory limit mirrors pm2's
