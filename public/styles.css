@@ -2688,6 +2688,8 @@ body.mode-rail .legend-rail {
   color: var(--live);
 }
 
+/* (animation for .stop-bell.on is defined below) */
+
 /* Remind-me button inside the map stop popup. */
 .popup-remind {
   background: var(--invert-bg);
@@ -2704,9 +2706,38 @@ body.mode-rail .legend-rail {
   width: 100%;
 }
 
+.popup-remind {
+  transition: background 0.18s ease, color 0.18s ease, transform 0.1s ease;
+}
+
+.popup-remind:active {
+  transform: scale(0.96);
+}
+
 .popup-remind.on {
   background: color-mix(in srgb, var(--live) 20%, transparent);
   color: var(--live);
+  /* A quick confirm pulse when it flips to set. */
+  animation: remind-set 0.45s ease;
+}
+
+@keyframes remind-set {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.06); box-shadow: 0 0 0 4px color-mix(in srgb, var(--live) 30%, transparent); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+}
+
+/* The timeline bell also confirms with a ring + shake when set. */
+.stop-bell.on {
+  animation: bell-ring 0.5s ease;
+}
+
+@keyframes bell-ring {
+  0% { transform: rotate(0) scale(1); }
+  20% { transform: rotate(-18deg) scale(1.15); }
+  45% { transform: rotate(14deg) scale(1.15); }
+  70% { transform: rotate(-8deg) scale(1.08); }
+  100% { transform: rotate(0) scale(1); }
 }
 
 .route-advisory {
