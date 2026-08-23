@@ -120,12 +120,22 @@ export async function buildSgBusFeed(): Promise<StaticGtfsFeed> {
     else tripsByRouteId.set(serviceNo, [trip]);
 
     const base = 6 * 60; // arbitrary; frequencies define real departures
+    let lastMinutes = base;
     stopTimesByTripId.set(
       tripId,
       rows
         .filter((row) => stops.has(row.BusStopCode))
         .map((row, index) => {
-          const minutes = base + Math.round(((row.Distance || 0) / BUS_KMH) * 60);
+          /* Distance data is imperfect: route 857 ships none at all, and
+             other routes have null holes mid-sequence. Either produces
+             non-monotonic times — a bus that "arrives before it left"
+             dominates every label in the journey planner and corrupts it.
+             Time along a trip therefore only ever moves forward: the
+             distance estimate when it advances, one minute per stop when
+             it does not. */
+          const byDistance = Math.round(((row.Distance || 0) / BUS_KMH) * 60);
+          lastMinutes = Math.max(lastMinutes + (index > 0 ? 1 : 0), base + byDistance);
+          const minutes = lastMinutes;
           const h = Math.floor(minutes / 60);
           const m = minutes % 60;
           const time = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`;

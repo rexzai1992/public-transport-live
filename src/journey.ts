@@ -379,7 +379,19 @@ type Label = {
   time: number;
   /** How this stop was reached, for reconstructing the itinerary. */
   via?:
-    | { kind: "ride"; patternIndex: number; boardKey: string; boardTime: number; tripIndex: number }
+    | {
+        kind: "ride";
+        patternIndex: number;
+        boardKey: string;
+        boardTime: number;
+        tripIndex: number;
+        /* Exact positions in the pattern. Loop routes visit a stop twice, so
+           indexOf-ing keys at reconstruction picked the wrong visit and the
+           journey was thrown away — one bad bus label at the destination then
+           hid every valid train underneath it. */
+        boardIndex: number;
+        alightIndex: number;
+      }
     | { kind: "walk"; fromKey: string; meters: number; minutes: number };
 };
 
@@ -482,7 +494,7 @@ export async function planJourney(request: PlanRequest): Promise<{
         if (arrival < known) {
           const label: Label = {
             time: arrival,
-            via: { kind: "ride", patternIndex, boardKey: board.key, boardTime, tripIndex }
+            via: { kind: "ride", patternIndex, boardKey: board.key, boardTime, tripIndex, boardIndex: board.index, alightIndex: i }
           };
           best.set(key, label);
           improved.set(key, label);
@@ -578,7 +590,22 @@ function nearbyStops(
   }
 
   found.sort((a, b) => a.meters - b.meters);
-  return found.slice(0, 12);
+
+  /* Twelve nearest is right for buses but starved rail in dense cores:
+     around Raffles Place, 82 stops sit within reach and the 12 closest are
+     all bus poles — the MRT station 61 m away never became an origin, so no
+     rail journey could begin. Rail stops are few and high-value; keep every
+     one in range alongside the nearest dozen. */
+  const picked = found.slice(0, 12);
+  const have = new Set(picked.map((entry) => entry.stop.key));
+  for (const entry of found) {
+    if (picked.length >= 24) break;
+    if (FEEDS[entry.stop.feed].mode === "rail" && !have.has(entry.stop.key)) {
+      picked.push(entry);
+      have.add(entry.stop.key);
+    }
+  }
+  return picked;
 }
 
 /** Destination stops, each with the walk from it to the requested point. */
@@ -655,8 +682,7 @@ function reconstruct(
 
     const pattern = network.patterns[label.via.patternIndex];
     const trip = pattern.trips[label.via.tripIndex];
-    const boardIndex = pattern.stopKeys.indexOf(label.via.boardKey);
-    const alightIndex = pattern.stopKeys.indexOf(key);
+    const { boardIndex, alightIndex } = label.via;
     if (boardIndex < 0 || alightIndex <= boardIndex) {
       return null;
     }
@@ -971,11 +997,13 @@ export async function searchStops(
       a.stop.name.localeCompare(b.stop.name)
   );
 
-  // One entry per station, not one per platform.
+  // One entry per station, not one per platform — but never across countries:
+  // KTM's TANAH MERAH in Kelantan must not swallow Singapore's Tanah Merah.
   const seen = new Set<string>();
   const result: StopRef[] = [];
   for (const entry of scored) {
-    const dedupeKey = normalizeName(entry.stop.name);
+    const region = entry.stop.feed.startsWith("sg") ? "sg" : "my";
+    const dedupeKey = `${region}|${normalizeName(entry.stop.name)}`;
     if (seen.has(dedupeKey)) {
       continue;
     }
