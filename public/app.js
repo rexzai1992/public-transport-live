@@ -3880,6 +3880,15 @@ async function toggleReminders() {
     const ok = await scheduleJourneyReminders(journey);
     state.journey.reminders = ok;
     setStatus(ok ? "Will remind you before departure" : "Reminders unavailable", ok ? "live" : "error");
+    // Granting notifications is also the moment to offer disruption push.
+    if (ok) {
+      try {
+        localStorage.setItem("rapidbus.pushOptIn", "1");
+      } catch {
+        /* optional */
+      }
+      registerPushIfAllowed();
+    }
   }
   renderJourneySteps(journey);
 }
@@ -4509,6 +4518,24 @@ function compactCount(n) {
   });
   window.addEventListener("pagehide", flush);
 })();
+
+/* Push registration (APK only): once the user has allowed notifications,
+   register this device's FCM token so server disruption alerts reach it.
+   Opt-in — piggybacks on the notification permission, never asks on its own. */
+async function registerPushIfAllowed() {
+  const native = window.RapidBusNative;
+  if (!native?.isNative || !native.registerPush) return;
+  try {
+    if (!localStorage.getItem("rapidbus.pushOptIn")) return;
+    const token = await native.registerPush();
+    if (token) {
+      await fetch(apiUrl(`/api/push/register?token=${encodeURIComponent(token)}`), { keepalive: true }).catch(() => {});
+    }
+  } catch {
+    /* push is optional */
+  }
+}
+registerPushIfAllowed();
 
 /* Disruption strip: checked on load and every three minutes. Only rendered
    when something is actually wrong — an empty banner is noise. */
