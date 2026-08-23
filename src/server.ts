@@ -124,54 +124,105 @@ app.get("/my-admin", (req, res) => {
 
 const ADMIN_HTML = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PT Live — Admin</title>
+<title>PT Live \u2014 Admin</title>
 <style>
-:root { --bg:#f5f6f8; --card:#fff; --ink:#16202c; --ink2:#5b6b7d; --rule:#e3e8ee; --bar:#2563eb; }
-@media (prefers-color-scheme: dark){ :root { --bg:#0a1018; --card:#111825; --ink:#e8f0fa; --ink2:#a9c1dd; --rule:#22304a; --bar:#7cc4ff; } }
-*{box-sizing:border-box} body{background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif;margin:0;padding:24px}
+:root { --bg:#f5f6f8; --card:#fff; --ink:#16202c; --ink2:#5b6b7d; --rule:#e3e8ee;
+  --line:#2563eb; --line2:#0ea5e9; --good:#16a34a; --warn:#d97706; --bad:#dc2626; }
+@media (prefers-color-scheme: dark){ :root { --bg:#0a1018; --card:#111825; --ink:#e8f0fa; --ink2:#a9c1dd; --rule:#22304a;
+  --line:#7cc4ff; --line2:#5eead4; --good:#4ade80; --warn:#fbbf24; --bad:#f87171; } }
+*{box-sizing:border-box} body{background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif;margin:0;padding:24px;max-width:980px;margin-inline:auto}
 h1{font-size:20px;margin:0 0 4px} .sub{color:var(--ink2);font-size:12.5px;margin:0 0 20px}
-.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:20px}
-.card{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:14px 16px}
-.card b{display:block;font-size:24px;font-variant-numeric:tabular-nums}
-.card span{color:var(--ink2);font-size:12px}
-h2{font-size:14px;margin:22px 0 10px}
-.bars{align-items:flex-end;background:var(--card);border:1px solid var(--rule);border-radius:12px;display:flex;gap:3px;height:120px;padding:12px}
-.bars div{background:var(--bar);border-radius:3px 3px 0 0;flex:1;min-height:2px;position:relative}
-.bars div:hover::after{background:var(--ink);border-radius:6px;bottom:calc(100% + 4px);color:var(--bg);content:attr(data-t);font-size:10.5px;left:50%;padding:2px 7px;position:absolute;transform:translateX(-50%);white-space:nowrap}
+h2{font-size:14px;margin:24px 0 10px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:13px 15px}
+.card b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.card span{color:var(--ink2);font-size:11.5px}
+.panel{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:16px}
+svg text{fill:var(--ink2);font:10.5px system-ui}
+.gauge{margin:10px 0 2px}
+.gauge .glabel{display:flex;font-size:12.5px;justify-content:space-between;margin-bottom:5px}
+.gauge .glabel b{font-variant-numeric:tabular-nums}
+.gtrack{background:linear-gradient(to right,
+    color-mix(in srgb,var(--good) 22%, transparent) 0 70%,
+    color-mix(in srgb,var(--warn) 30%, transparent) 70% 85%,
+    color-mix(in srgb,var(--bad) 30%, transparent) 85% 100%);
+  border:1px solid var(--rule);border-radius:99px;height:14px;overflow:hidden;position:relative}
+.gfill{border-radius:99px;height:100%;transition:width .4s}
+.gfill.ok{background:var(--good)} .gfill.warn{background:var(--warn)} .gfill.bad{background:var(--bad)}
+.zones{color:var(--ink2);display:flex;font-size:10.5px;justify-content:space-between;margin-top:3px}
 table{border-collapse:collapse;width:100%;background:var(--card);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
 td,th{border-top:1px solid var(--rule);font-size:13px;padding:8px 14px;text-align:left}
 th{border:0;color:var(--ink2);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
 td:last-child{font-variant-numeric:tabular-nums;text-align:right}
+.legend{color:var(--ink2);font-size:11.5px;margin:6px 2px 0}
+.legend i{border-radius:2px;display:inline-block;height:3px;margin:0 5px 3px 12px;width:18px;vertical-align:middle}
 </style></head><body>
 <h1>Public Transport Live</h1><p class="sub" id="sub">Loading\u2026</p>
+
+<h2>System health</h2>
+<div class="panel" id="health"></div>
+
+<h2>Today</h2>
 <div class="grid" id="cards"></div>
-<h2>Visits \u2014 last 30 days</h2><div class="bars" id="bars"></div>
-<h2>Minutes used \u2014 last 30 days</h2><div class="bars" id="minbars"></div>
-<h2>Most opened routes</h2><table id="routes"><tr><th>Route</th><th>Opens</th></tr></table>
+
+<h2>Last 30 days</h2>
+<div class="panel"><div id="chart"></div>
+<div class="legend"><i style="background:var(--line)"></i>visits <i style="background:var(--line2)"></i>minutes used</div></div>
+
+<h2>Most opened routes</h2>
+<table id="routes"><tr><th>Route</th><th>Opens</th></tr></table>
+
 <script>
+function gauge(label, value, max, unit, note){
+  const pct=Math.min(100, value/max*100);
+  const cls=pct>=85?"bad":pct>=70?"warn":"ok";
+  return "<div class=gauge><div class=glabel><span>"+label+"</span><b>"+value.toLocaleString()+" / "+max.toLocaleString()+" "+unit+"</b></div>"+
+    "<div class=gtrack><div class='gfill "+cls+"' style='width:"+pct.toFixed(1)+"%'></div></div>"+
+    "<div class=zones><span>ok</span><span>warn \u2265 70%</span><span>"+note+"</span></div></div>";
+}
+
+function chart(days){
+  const W=900,H=220,P={l:44,r:14,t:12,b:26};
+  const iw=W-P.l-P.r, ih=H-P.t-P.b;
+  const vis=days.map(([,v])=>v.visits||0);
+  const min=days.map(([,v])=>Math.round((v.activeSec||0)/60));
+  const maxY=Math.max(4,...vis,...min);
+  const step=Math.ceil(maxY/4);
+  const x=(i)=>P.l+(days.length<2?iw/2:i*(iw/(days.length-1)));
+  const y=(v)=>P.t+ih-(v/(step*4))*ih;
+  const path=(arr)=>arr.map((v,i)=>(i?"L":"M")+x(i).toFixed(1)+" "+y(v).toFixed(1)).join(" ");
+  let g="";
+  for(let t=0;t<=4;t++){const yy=y(step*t);
+    g+="<line x1="+P.l+" y1="+yy+" x2="+(W-P.r)+" y2="+yy+" stroke=var(--rule) stroke-width=1 />"+
+       "<text x="+(P.l-8)+" y="+(yy+3.5)+" text-anchor=end>"+(step*t)+"</text>";}
+  const lx=Math.max(1,Math.floor(days.length/6));
+  days.forEach(([k],i)=>{ if(i%lx===0||i===days.length-1)
+    g+="<text x="+x(i)+" y="+(H-8)+" text-anchor=middle>"+k.slice(5)+"</text>";});
+  const dots=(arr,col)=>arr.map((v,i)=>"<circle cx="+x(i).toFixed(1)+" cy="+y(v).toFixed(1)+" r=2.6 fill="+col+"><title>"+days[i][0].slice(5)+": "+v+"</title></circle>").join("");
+  return "<svg viewBox='0 0 "+W+" "+H+"' style='width:100%;height:auto'>"+g+
+    "<path d='"+path(vis)+"' fill=none stroke=var(--line) stroke-width=2.2 />"+
+    "<path d='"+path(min)+"' fill=none stroke=var(--line2) stroke-width=2 stroke-dasharray='5 4' />"+
+    dots(vis,"var(--line)")+dots(min,"var(--line2)")+"</svg>";
+}
+
 fetch("/my-admin/data").then((r)=>r.json()).then((d)=>{
   const days=Object.entries(d.days).sort((a,b)=>a[0]<b[0]?-1:1).slice(-30);
   const t=d.today;
   document.getElementById("sub").textContent=
-    "tracking since "+d.startedTracking+" \u00b7 uptime "+Math.floor(d.uptimeSeconds/3600)+"h "+Math.floor(d.uptimeSeconds%3600/60)+"m \u00b7 rss "+d.memoryMb+" MB";
+    "tracking since "+d.startedTracking+" \u00b7 uptime "+Math.floor(d.uptimeSeconds/3600)+"h "+Math.floor(d.uptimeSeconds%3600/60)+"m";
+  document.getElementById("health").innerHTML=
+    gauge("Memory (RSS)", d.memoryMb, d.memoryLimitMb, "MB", "pm2 restarts at 100%")+
+    gauge("API calls today", t.api||0, d.apiSoftBudget, "calls", "soft budget");
   const mins=Math.round((t.activeSec||0)/60);
   const avg=t.visits?Math.round((t.activeSec||0)/t.visits):0;
   const cards=[["Total visits",d.visits],["Visits today",t.visits],
-    ["Time used today",mins+" min"],["Avg per visit",avg+" s"],
+    ["Time used",mins+" min"],["Avg / visit",avg+" s"],
     ["Stayed 30s+",t.s30||0],["Used 3min+",t.s3m||0],["Used 10min+",t.s10m||0],
-    ["Routes opened",t.routeViews],["Journeys",t.journeys],["Nearby",t.nearby],
-    ["Flight loads",t.flights],["API calls",t.api]];
+    ["Routes opened",t.routeViews],["Journeys",t.journeys],["Nearby",t.nearby],["Flights",t.flights]];
   document.getElementById("cards").innerHTML=cards.map(([k,v])=>"<div class=card><b>"+(typeof v==="number"?v.toLocaleString():v)+"</b><span>"+k+"</span></div>").join("");
-  const max=Math.max(1,...days.map(([,v])=>v.visits));
-  document.getElementById("bars").innerHTML=days.map(([k,v])=>
-    "<div style=height:"+Math.max(2,Math.round(v.visits/max*100))+"% data-t='"+k.slice(5)+": "+v.visits+"'></div>").join("")||"<span style=color:var(--ink2);font-size:12px>no days yet</span>";
-  const maxMin=Math.max(1,...days.map(([,v])=>Math.round((v.activeSec||0)/60)));
-  document.getElementById("minbars").innerHTML=days.map(([k,v])=>{
-    const m=Math.round((v.activeSec||0)/60);
-    return "<div style=height:"+Math.max(2,Math.round(m/maxMin*100))+"% data-t='"+k.slice(5)+": "+m+" min'></div>";
-  }).join("")||"<span style=color:var(--ink2);font-size:12px>no days yet</span>";
+  document.getElementById("chart").innerHTML=days.length?chart(days):"<span style=color:var(--ink2);font-size:12px>no days yet</span>";
   document.getElementById("routes").insertAdjacentHTML("beforeend",
-    d.topRoutes.map((r)=>"<tr><td>"+r.key+"</td><td>"+r.count+"</td></tr>").join("")||"<tr><td colspan=2>none yet</td></tr>");
+    d.topRoutes.map((r)=>"<tr><td title='"+r.key+"'>"+(r.name||r.key)+"</td><td>"+r.count+"</td></tr>").join("")||"<tr><td colspan=2>none yet</td></tr>");
 });
 </script></body></html>`;
 
