@@ -2669,6 +2669,25 @@ body.mode-rail .legend-rail {
   font-size: 12px;
 }
 
+/* Per-stop reminder bell in the route timeline. */
+.stop-bell {
+  align-items: center;
+  color: var(--ink-3);
+  cursor: pointer;
+  display: inline-flex;
+  flex: none;
+  height: 26px;
+  justify-content: center;
+  margin-left: 4px;
+  width: 26px;
+}
+
+.stop-bell:hover { color: var(--ink-2); }
+
+.stop-bell.on {
+  color: var(--live);
+}
+
 .route-advisory {
   background: color-mix(in srgb, #d97706 14%, transparent);
   border-left: 3px solid #d97706;

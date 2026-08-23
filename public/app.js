@@ -24,6 +24,7 @@ const state = {
   userLocation: null,
   modeFilter: "all",
   alertsByRoute: new Map(),
+  stopAlerts: new Map(),
   alertTimer: null,
   region: "my",
   userMarker: null,
@@ -692,6 +693,9 @@ async function selectRoute(routeId, category, options = {}) {
   if (routeId !== state.activeRouteId && !options.keepDirection) {
     state.direction = 0;
   }
+  if (routeId !== state.activeRouteId) {
+    state.stopAlerts.clear();
+  }
   state.activeRouteId = routeId;
   document.body.classList.add("has-route");
   updateStarButton();
@@ -1087,6 +1091,50 @@ function stopLiveRefresh() {
   setLiveText("Pick a route", false);
 }
 
+/* Per-stop alerts: tap a stop's bell, get a notification when a live vehicle
+   is within a few minutes of it. Works while the app is open / on screen —
+   the live feed already refreshes every 30s, so this just watches the ETA
+   the server already computes for that stop. Keyed by route so alerts don't
+   bleed across routes. */
+async function toggleStopAlert(stopId) {
+  const key = `${state.activeRouteId}:${stopId}`;
+  if (state.stopAlerts.has(stopId)) {
+    state.stopAlerts.delete(stopId);
+    setStatus("Alert removed", "idle");
+  } else {
+    if (!(await ensureNotifyPermission())) {
+      setStatus("Allow notifications first", "error");
+      return;
+    }
+    state.stopAlerts.set(stopId, { fired: false, routeKey: key });
+    const stop = state.currentStops.find((f) => String(f.properties.stopId) === stopId);
+    setStatus(`Will alert for ${stop ? titleCase(stop.properties.name) : "this stop"}`, "live");
+  }
+  renderRouteDetails();
+}
+
+function checkStopAlerts() {
+  if (!state.stopAlerts.size) return;
+  for (const feature of state.currentStops) {
+    const stopId = String(feature.properties.stopId);
+    const alert = state.stopAlerts.get(stopId);
+    if (!alert || alert.fired) continue;
+    const eta = Number(feature.properties.etaMinutes);
+    if (Number.isFinite(eta) && eta <= 3) {
+      alert.fired = true;
+      window.RapidBusNative?.notify(
+        `${vehicleNoun(false).replace(/^./, (c) => c.toUpperCase())} approaching`,
+        `A ${vehicleNoun()} is about ${eta <= 1 ? "1 minute" : `${Math.round(eta)} minutes`} from ${titleCase(feature.properties.name)}.`
+      );
+      // Re-arm after it passes, so the next vehicle also alerts.
+      window.setTimeout(() => {
+        const a = state.stopAlerts.get(stopId);
+        if (a) a.fired = false;
+      }, 5 * 60 * 1000);
+    }
+  }
+}
+
 async function refreshVehicles() {
   if (!state.activeRouteId) {
     return;
@@ -1109,6 +1157,7 @@ async function refreshVehicles() {
   state.nextRefreshAt = Date.now() + LIVE_REFRESH_MS;
   updateVehicleMarkers(features, { fitToVehicles: state.followVehicles });
   updateStopPopups();
+  checkStopAlerts();
   renderRouteDetails();
   renderLiveStatus();
 }
@@ -1824,6 +1873,9 @@ function renderStopTimeline() {
           }
           ${isNearest ? `<span class="stop-flag">You · ${escapeHtml(formatDistance(nearest.distance))}</span>` : ""}
           ${stopTimeCell(props)}
+          <span class="stop-bell${state.stopAlerts.has(stopId) ? " on" : ""}" data-alert-stop="${escapeHtml(stopId)}" title="Remind me when a ${vehicleNoun()} is approaching this stop" role="button">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v3.2l-1.6 3a1 1 0 0 0 .9 1.5h13.4a1 1 0 0 0 .9-1.5l-1.6-3V9a6 6 0 0 0-6-6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M10 19.5a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          </span>
         </button>
       `;
     })
@@ -3030,6 +3082,13 @@ routeDetails.addEventListener("click", (event) => {
   if (event.target.closest('[data-action="swap-direction"]')) {
     setStatus("Loading", "loading");
     swapDirection().catch(showError);
+    return;
+  }
+
+  const bell = event.target.closest("[data-alert-stop]");
+  if (bell) {
+    event.stopPropagation();
+    toggleStopAlert(bell.dataset.alertStop);
     return;
   }
 
