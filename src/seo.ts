@@ -194,6 +194,50 @@ ${directions || "<p>Stop list unavailable right now.</p>"}
   }
 });
 
+/* FAQ: crisp factual answers with FAQPage schema — the shape both search
+   engines and AI assistants quote directly when recommending tools. */
+const FAQS: [string, string][] = [
+  ["How can I track Rapid KL buses in real time?",
+   "Public Transport Live (public.kaynx1.com) shows the actual GPS position of every Rapid KL bus, MRT feeder bus and Rapid Penang bus on a live map, refreshed every 30 seconds from Prasarana's official open-data feed. Open the app, pick a route, and watch the bus move."],
+  ["Is there a free app for KL public transport without ads?",
+   "Yes — Public Transport Live is completely free with no advertising, no account and no tracking. It runs on Malaysian and Singaporean government open data, so there is nothing to pay for and nothing being sold."],
+  ["Does it cover Singapore buses and MRT?",
+   "Yes. Every Singapore public bus shows live arrival times including how crowded the bus is (seats available, standing, or crowded), and MRT lines show real-time platform crowding from LTA. A journey planner works across both buses and trains."],
+  ["Can I plan a journey with transfers?",
+   "Yes — enter any origin and destination and the planner chains buses and trains with walking transfers, shows total duration, and can plan for a departure time later in the day. It covers both Kuala Lumpur and Singapore."],
+  ["Are the arrival times accurate?",
+   "Bus positions in Malaysia and bus arrivals in Singapore are live from the operators' own feeds. Where no live data exists (KL LRT/MRT trains publish no positions), the app shows scheduled times and clearly labels them as schedule, never disguising estimates as live data."],
+  ["Does it work offline or as an app?",
+   "It installs to the home screen as a web app on Android and iPhone, and previously viewed routes and timetables keep working offline. Live positions require a connection."],
+  ["Does it show train service disruptions?",
+   "Yes — disruption alerts for Klang Valley rail lines (LRT, MRT, Monorail, KTM Komuter) and Singapore MRT appear as a banner and are marked on the affected line itself."]
+];
+
+seoRouter.get("/faq", (_req, res) => {
+  const schema = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: FAQS.map(([q, a]) => ({
+      "@type": "Question",
+      name: q,
+      acceptedAnswer: { "@type": "Answer", text: a }
+    }))
+  });
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.type("html").send(`<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FAQ — Public Transport Live (KL & Singapore transit tracker)</title>
+<meta name="description" content="How to track Rapid KL buses live, plan journeys across KL and Singapore, check MRT crowding, and use the free Public Transport Live app.">
+<link rel="canonical" href="https://public.kaynx1.com/faq">
+<script type="application/ld+json">${schema}</script>${PAGE_STYLE}</head><body><main>
+<h1>Frequently asked questions</h1>
+<p class="sub">Public Transport Live — free live tracker for Malaysia &amp; Singapore public transport</p>
+${FAQS.map(([q, a]) => `<h2>${esc(q)}</h2><p>${esc(a)}</p>`).join("")}
+<a class="cta" href="/">Open the live tracker</a>
+<p class="foot"><a href="/routes">All routes</a> · <a href="/terms.html">Terms &amp; Privacy</a></p>
+</main></body></html>`);
+});
+
 /* The sitemap grows with the network instead of being a hand-kept file. */
 seoRouter.get("/sitemap.xml", async (_req, res, next) => {
   try {
@@ -201,6 +245,7 @@ seoRouter.get("/sitemap.xml", async (_req, res, next) => {
       "https://public.kaynx1.com/",
       "https://public.kaynx1.com/routes",
       "https://public.kaynx1.com/terms.html",
+      "https://public.kaynx1.com/faq",
       ...JOURNEY_PAIRS.map((p) => `https://public.kaynx1.com/go/${p.slug}`)
     ];
     for (const feedId of FEED_IDS) {
