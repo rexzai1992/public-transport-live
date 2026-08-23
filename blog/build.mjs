@@ -10,6 +10,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const out = join(here, "dist");
 const SITE = "https://blog.kaynx1.com";
 const APP = "https://public.kaynx1.com";
+/* App links carry ?ref=guide so the admin panel can count guide→app arrivals. */
+const APP_REF = `${APP}/?ref=guide`;
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
@@ -96,8 +98,10 @@ ${style}</head><body><a class="topbar" href="/">
 <main${wide ? ' class="wide"' : ""}${accent ? ` style="--accent:${accent}"` : ""}>
 ${body}
 <p class="foot">Public Transport Live — independent guide built on open data. Times shown are typical and change;
-always check the <a href="${APP}">live tracker</a> before you travel. <a href="${APP}/terms.html">Terms &amp; Privacy</a></p>
-</main></body></html>`;
+always check the <a href="${APP_REF}">live tracker</a> before you travel. <a href="${APP}/terms.html">Terms &amp; Privacy</a></p>
+</main>
+<script>try{fetch("${APP}/api/guide-view?page="+encodeURIComponent(location.pathname),{mode:"no-cors"})}catch(e){}</script>
+</body></html>`;
 
 /* Real data, not filler: posts may embed {{ends:category:CODE}} and
    {{stops:category:CODE}} placeholders, resolved at build time from the
@@ -157,11 +161,24 @@ const posts = readdirSync(join(here, "posts")).filter((f) => f.endsWith(".html")
 const stamp = new Date().toISOString().slice(0, 10);
 for (const post of posts) {
   const resolved = await resolvePlaceholders(post.body);
-  const body = `<h1>${post.title}</h1><p class="sub">${post.date} · Public Transport Live guide</p>
+  const ogImage = (post.body.match(/\/img\/([a-z-]+\.webp)/) || [null, "hero-banner.webp"])[1];
+  const schema = `<script type="application/ld+json">${JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: post.title,
+    description: post.desc,
+    datePublished: post.date,
+    dateModified: stamp,
+    image: `${SITE}/img/${ogImage}`,
+    author: { "@type": "Organization", name: "Public Transport Live" },
+    publisher: { "@type": "Organization", name: "Public Transport Live", url: APP }
+  })}</script>
+<meta property="og:image" content="${SITE}/img/${ogImage}">`;
+  const body = `${schema}<h1>${post.title}</h1><p class="sub">${post.date} · Public Transport Live guide</p>
 ${resolved}
 <p class="sub" style="margin-top:26px">Route figures on this page were generated on ${stamp} from the official
-Prasarana / LTA open-data feeds — the same source the <a href="${APP}">live tracker</a> uses. Nothing here is hand-typed.</p>
-<p><a class="cta" href="${APP}">Check it live before you travel — free, no login</a></p>`;
+Prasarana / LTA open-data feeds — the same source the <a href="${APP_REF}">live tracker</a> uses. Nothing here is hand-typed.</p>
+<p><a class="cta" href="${APP_REF}">Check it live before you travel — free, no login</a></p>`;
   writeFileSync(join(out, `${post.slug}.html`), page(`${post.title} | Transit Guide`, post.desc, `${SITE}/${post.slug}`, `<article>${body}</article>`, false, post.accent || ""));
 }
 
@@ -186,7 +203,7 @@ writeFileSync(join(out, "index.html"), pageWide(
 <div class="eyebrow">Platform 1 · Now boarding</div>
 <h1>KL &amp; Singapore transit, explained</h1>
 <p>Line guides, schedules and how-tos built on the official open-data feeds — paired with a free live tracker showing every bus and train moving in real time.</p>
-<a class="cta" href="${APP}">Open the live tracker</a>
+<a class="cta" href="${APP_REF}">Open the live tracker</a>
 <a class="cta ghost" href="${APP}/routes">Browse ${routeTotal ? routeTotal.toLocaleString() : "all"} routes</a>
 <div class="hero-chips">
 <span><b>${routeTotal ? routeTotal.toLocaleString() : "990+"}</b> routes tracked</span>

@@ -4330,7 +4330,8 @@ function compactCount(n) {
     } catch {
       /* storage-less: never counted, never double-counted */
     }
-    const data = await getJson(fresh ? `/api/visit?src=${surface}${device}` : "/api/stats");
+    const ref = new URLSearchParams(location.search).get("ref") === "guide" ? "&ref=guide" : "";
+    const data = await getJson(fresh ? `/api/visit?src=${surface}${device}${ref}` : "/api/stats");
     if (fresh) sessionStorage.setItem("rapidbus.visited", "1");
     if (Number.isFinite(data.visits) && data.visits > 0) {
       el.textContent = compactCount(data.visits);

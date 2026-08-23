@@ -173,6 +173,9 @@ td:last-child{font-variant-numeric:tabular-nums;text-align:right}
 <h2 id=fbh>Feedback</h2>
 <table id="fb"><tr><th>When (MYT)</th><th>Stars</th><th>Suggestion</th></tr></table>
 
+<h2>Guide pages — most read</h2>
+<table id="gp"><tr><th>Page</th><th>Views</th></tr></table>
+
 <h2>Most opened routes</h2>
 <table id="routes"><tr><th>Route</th><th>Opens</th></tr></table>
 
@@ -225,12 +228,15 @@ fetch("/my-admin/data").then((r)=>r.json()).then((d)=>{
     ["Routes opened",t.routeViews],["Journeys",t.journeys],["Nearby",t.nearby],["Flights",t.flights],
     ["PWA devices (all time)",d.pwaDevices||0],["APK devices (all time)",d.apkDevices||0],
     ["PWA installs seen",d.pwaInstalls||0],["PWA visits today",t.pwa||0],["APK visits today",t.apk||0],
-    ["Browser visits today",Math.max(0,(t.visits||0)-(t.pwa||0)-(t.apk||0))]];
+    ["Browser visits today",Math.max(0,(t.visits||0)-(t.pwa||0)-(t.apk||0))],
+    ["Guide views today",t.guideViews||0],["Came from guide",t.fromGuide||0]];
   document.getElementById("cards").innerHTML=cards.map(([k,v])=>"<div class=card><b>"+(typeof v==="number"?v.toLocaleString():v)+"</b><span>"+k+"</span></div>").join("");
   document.getElementById("chart").innerHTML=days.length?chart(days):"<span style=color:var(--ink2);font-size:12px>no days yet</span>";
   document.getElementById("fbh").textContent="Feedback"+(d.feedbackCount?" \u2014 "+d.feedbackAvg+"\u2605 avg \u00b7 "+d.feedbackCount+" total":"");
   document.getElementById("fb").insertAdjacentHTML("beforeend",
     (d.feedback||[]).map((f)=>"<tr><td>"+f.at+"</td><td>"+"\u2605".repeat(f.stars)+"</td><td>"+(f.msg?f.msg.replace(/[<>&]/g,(c)=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])):"\u2014")+"</td></tr>").join("")||"<tr><td colspan=3>none yet</td></tr>");
+  document.getElementById("gp").insertAdjacentHTML("beforeend",
+    (d.guidePages||[]).map((g)=>"<tr><td>"+g[0]+"</td><td>"+g[1]+"</td></tr>").join("")||"<tr><td colspan=2>none yet</td></tr>");
   document.getElementById("routes").insertAdjacentHTML("beforeend",
     d.topRoutes.map((r)=>"<tr><td title='"+r.key+"'>"+(r.name||r.key)+"</td><td>"+r.count+"</td></tr>").join("")||"<tr><td colspan=2>none yet</td></tr>");
 });
