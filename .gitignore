@@ -10,3 +10,4 @@ mobile/android/local.properties
 .DS_Store
 data/
 fcm-key.json
+public/download/

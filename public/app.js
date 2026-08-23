@@ -4615,6 +4615,49 @@ function compactCount(n) {
   window.addEventListener("pagehide", flush);
 })();
 
+/* ------------------------------------------------------------------------ */
+/* Battery & data saver: when the app is backgrounded or the screen is off,   */
+/* nothing on screen is being read — so stop all polling. Live vehicles,     */
+/* the 1s countdown, flights and the alert poll all pause when hidden and     */
+/* resume on return. Trip tracking is deliberately NOT paused: that is the    */
+/* one thing the user explicitly asked to run in the background.              */
+/* ------------------------------------------------------------------------ */
+let alertPollTimer = null;
+
+function pauseBackgroundWork() {
+  if (state.liveTimer) { window.clearInterval(state.liveTimer); state.liveTimer = null; }
+  if (state.countdownTimer) { window.clearInterval(state.countdownTimer); state.countdownTimer = null; }
+  if (flightState.timer) { window.clearInterval(flightState.timer); flightState.timer = null; }
+  if (alertPollTimer) { window.clearInterval(alertPollTimer); alertPollTimer = null; }
+}
+
+function resumeBackgroundWork() {
+  // Live vehicle polling resumes only if a route is open.
+  if (state.activeRouteId && !state.liveTimer) {
+    refreshVehicles().catch(() => {});
+    state.liveTimer = window.setInterval(() => refreshVehicles().catch(() => {}), LIVE_REFRESH_MS);
+    state.countdownTimer = window.setInterval(renderLiveStatus, 1000);
+  }
+  // Flights resume only if the layer was on.
+  if (flightState.on && !flightState.timer) {
+    refreshFlights();
+    flightState.timer = window.setInterval(refreshFlights, 15000);
+  }
+  // Alerts: refresh once on return, then keep the 3-min poll.
+  refreshAlerts();
+  if (!alertPollTimer) {
+    alertPollTimer = window.setInterval(refreshAlerts, 3 * 60 * 1000);
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    pauseBackgroundWork();
+  } else {
+    resumeBackgroundWork();
+  }
+});
+
 /* Push registration (APK only): once the user has allowed notifications,
    register this device's FCM token so server disruption alerts reach it.
    Opt-in — piggybacks on the notification permission, never asks on its own. */
@@ -4726,7 +4769,7 @@ async function refreshAlerts() {
   }
 }
 refreshAlerts();
-window.setInterval(refreshAlerts, 3 * 60 * 1000);
+alertPollTimer = window.setInterval(refreshAlerts, 3 * 60 * 1000);
 
 try {
   const savedRegion = localStorage.getItem(REGION_KEY);
@@ -5011,6 +5054,11 @@ function showInstallCard({ mode, onInstall }) {
              <li><span class="install-glyph">${plusGlyph}</span>Choose <b>Add to Home Screen</b></li>
            </ol>`
         : `<button type="button" class="install-go">Install app</button>`
+    }
+    ${
+      /android/i.test(navigator.userAgent)
+        ? `<a class="install-apk" href="/download/ptlive.apk" download>Or get the Android app <b>(APK)</b> for reliable alerts \u2192</a>`
+        : ""
     }
   `;
 
