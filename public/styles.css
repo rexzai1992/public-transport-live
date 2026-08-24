@@ -268,11 +268,12 @@ body:not(.has-route):not(.has-journey) .discover {
 /* Header */
 
 .brand {
-  align-items: flex-start;
+  align-items: center;
   display: flex;
-  gap: var(--sp-3);
+  gap: var(--sp-2);
   padding: 0 var(--sp-5) var(--sp-2);
 }
+.brand-copy { flex: 1; min-width: 0; }
 
 .brand-mark {
   background: var(--invert-bg);
@@ -2832,7 +2833,6 @@ html[data-theme="dark"] .crowd-dot.h { color: #ef7a6d; }
 }
 
 body.iab .status-bar { top: calc(var(--sp-5) + var(--safe-top) + 40px); }
-body.iab .region-toggle { top: calc(var(--sp-5) + var(--safe-top) + 92px); }
 
 /* Flight layer. */
 /* Until the flight layer has been tried once, its button pulses a soft
@@ -2888,19 +2888,13 @@ html[data-theme="dark"] .map-btn.discover {
 
 /* Country switcher — floats under the status bar, same glass. */
 .region-toggle {
-  background: var(--glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: var(--glass-raised);
   border: 1px solid var(--edge);
   border-radius: var(--r-badge);
-  box-shadow: var(--shadow-sm);
   display: flex;
+  flex: none;
   gap: 3px;
   padding: 3px;
-  position: fixed;
-  right: calc(var(--sp-5) + var(--safe-right));
-  top: calc(var(--sp-5) + var(--safe-top) + 52px);
-  z-index: 620;
 }
 
 .region-btn {
@@ -2929,12 +2923,7 @@ html[data-theme="dark"] .map-btn.discover {
   color: var(--invert-ink);
 }
 
-@media (max-width: 1100px) {
-  .region-toggle {
-    right: calc(var(--sp-3) + var(--safe-right));
-    top: calc(var(--sp-5) + var(--safe-top) + 56px);
-  }
-}
+
 
 /* Install card — the app introducing itself: icon, name, one line of pitch,
    then the platform's real install path. Slides up from the bottom on
