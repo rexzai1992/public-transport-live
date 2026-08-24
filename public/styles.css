@@ -3122,6 +3122,53 @@ html[data-theme="dark"] .map-btn.discover {
 
 .rate-msg:focus { border-color: var(--edge-strong); outline: none; }
 
+/* Sideloaded-APK update bubble: bottom, above the sheet, dismissible. */
+.update-bubble {
+  align-items: center;
+  background: var(--invert-bg);
+  border-radius: 999px;
+  bottom: calc(var(--sp-5) + var(--safe-bottom));
+  box-shadow: var(--shadow);
+  color: var(--invert-ink);
+  display: flex;
+  gap: var(--sp-2);
+  left: 50%;
+  max-width: calc(100vw - 2 * var(--sp-4));
+  padding: 8px 8px 8px 16px;
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 950;
+}
+
+.update-bubble span {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-btn {
+  background: color-mix(in srgb, var(--invert-ink) 15%, transparent);
+  border-radius: 999px;
+  color: var(--invert-ink);
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 7px 16px;
+  text-decoration: none;
+}
+
+.update-x {
+  background: transparent;
+  border: 0;
+  color: var(--invert-ink);
+  cursor: pointer;
+  flex: none;
+  font-size: 17px;
+  opacity: 0.7;
+  padding: 0 6px;
+}
+
 /* The reload offer sits out of the way until tapped. */
 .update-prompt {
   background: var(--invert-bg);

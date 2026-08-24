@@ -4732,6 +4732,31 @@ function openFromNotification(data) {
 }
 window.RapidBusNative?.onNotificationTap?.(openFromNotification);
 
+/* In-app update bubble for sideloaded APKs (we are not on Play Store, so
+   there is no auto-update). The build's version is baked in at bundle time
+   (APP_BUILD_VERSION); if the server advertises a newer one, offer the APK. */
+async function checkAppUpdate() {
+  if (!window.Capacitor?.isNativePlatform?.()) return; // web auto-updates via SW
+  try {
+    const mine = Number(window.APP_BUILD_VERSION || 0);
+    const data = await getJson("/api/app-version");
+    if (!(Number(data.version) > mine)) return;
+    if (document.getElementById("updateBubble")) return;
+    const bubble = document.createElement("div");
+    bubble.id = "updateBubble";
+    bubble.className = "update-bubble";
+    bubble.innerHTML = `
+      <span><b>Update available</b>${data.notes ? ` — ${escapeHtml(data.notes)}` : ""}</span>
+      <a class="update-btn" href="${escapeHtml(data.url || "/download/ptlive.apk")}" download>Update</a>
+      <button type="button" class="update-x" aria-label="Later">\u00d7</button>`;
+    bubble.querySelector(".update-x").addEventListener("click", () => bubble.remove());
+    document.body.appendChild(bubble);
+  } catch {
+    /* update check is best-effort */
+  }
+}
+window.setTimeout(checkAppUpdate, 3000);
+
 /* Always-available "Get the app" in the footer — shows the install options on
    demand, even if the auto-popup was dismissed. Picks the right mode per
    platform; on Android without a live prompt it offers the APK + manual add. */
