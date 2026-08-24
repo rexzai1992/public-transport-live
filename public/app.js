@@ -2620,17 +2620,25 @@ try {
 const allStops = { layer: null, debounce: null, loadedKey: "" };
 const STOPS_MIN_ZOOM = 12;
 
-// Canvas renderer keeps hundreds of stop dots smooth (SVG/DOM would lag).
+/* Bus stops vs rail stations read as different SHAPES, like a real transit
+   map: bus stops are small canvas dots (there are hundreds — canvas keeps
+   them smooth); rail/MRT stations are a bolder rounded-square marker so they
+   stand out (few of them, so a DOM divIcon is fine). */
 const stopsCanvas = L.canvas({ padding: 0.3 });
 function addStopDot(stop) {
-  const m = L.circleMarker([stop.lat, stop.lon], {
-    renderer: stopsCanvas,
-    radius: 5,
-    color: stop.mode === "rail" ? "#2563eb" : "#111827",
-    weight: 2,
-    fillColor: "#ffffff",
-    fillOpacity: 1
-  });
+  const m = stop.mode === "rail"
+    ? L.marker([stop.lat, stop.lon], {
+        icon: L.divIcon({ className: "", html: '<span class="net-rail"></span>', iconSize: [16, 16], iconAnchor: [8, 8] }),
+        keyboard: false
+      })
+    : L.circleMarker([stop.lat, stop.lon], {
+        renderer: stopsCanvas,
+        radius: 4,
+        color: "#5b6b7d",
+        weight: 1.5,
+        fillColor: "#ffffff",
+        fillOpacity: 1
+      });
   m.on("click", () => openStopBoard(stop));
   return m;
 }
