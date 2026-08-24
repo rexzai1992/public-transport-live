@@ -74,6 +74,10 @@
             <h1>Public Transport Live</h1>
             <p class="eyebrow">Malaysia · Singapore · Live</p>
           </span>
+          <div id="regionToggle" class="region-toggle" role="group" aria-label="Country">
+            <button type="button" class="region-btn on" data-region="my">🇲🇾 <small>MY</small></button>
+            <button type="button" class="region-btn" data-region="sg">🇸🇬 <small>SG</small></button>
+          </div>
           <button id="themeToggle" class="icon-btn" type="button" aria-label="Switch colour mode">
             <svg class="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
@@ -267,10 +271,6 @@
       <p class="legend-note">Tap a bus to shade the route by its progress.</p>
     </section>
 
-    <div id="regionToggle" class="region-toggle" role="group" aria-label="Country">
-      <button type="button" class="region-btn on" data-region="my">🇲🇾 <small>MY</small></button>
-      <button type="button" class="region-btn" data-region="sg">🇸🇬 <small>SG</small></button>
-    </div>
 
     <div class="map-controls">
       <button id="flightsButton" class="map-btn" type="button" title="Show flights" aria-label="Show flights" aria-pressed="false">
