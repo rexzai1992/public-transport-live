@@ -3222,16 +3222,12 @@ html[data-theme="dark"] .map-btn.discover {
     flex: none;
   }
 
-  /* The chooser is a picker, not the content — one card's worth, scrollable.
-     Everything else goes to the timeline, which is what you actually read. */
+  /* The chooser flows in the page's single scroll — no separate scrollbox.
+     All options and the timeline below move together as one. */
   body.has-journey .jp-output {
-    -webkit-overflow-scrolling: touch;
     flex: none;
-    max-height: 104px;
-    /* The one-scroll rule sets overflow: visible, which let the OTHER journey
-       cards paint straight over the selected route's timeline on iOS. A capped
-       box must clip and scroll its own contents. */
-    overflow-y: auto;
+    max-height: none;
+    overflow: visible;
   }
 
   /* With a journey planned the panel used to be three separate boxes: the
