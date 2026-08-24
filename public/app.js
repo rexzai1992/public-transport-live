@@ -2636,26 +2636,42 @@ async function openStopBoard(stop) {
 
   try {
     const data = await getJson(`/api/stops/board?key=${encodeURIComponent(stop.key)}`);
-    const routes = data.routes || [];
+    // Live-first: an approaching vehicle is the thing you act on, so it leads;
+    // then soonest scheduled; ours groups the whole board this way.
+    const routes = (data.routes || []).slice().sort((a, b) =>
+      Number(b.live) - Number(a.live) ||
+      (a.times[0] ?? Infinity) - (b.times[0] ?? Infinity)
+    );
     const liveCount = routes.filter((r) => r.live).length;
     const chips = routes.map((r) => {
       const t = r.times[0];
-      const when = t === undefined ? "" : (t <= 0 ? "now" : t + "m");
+      const when = t === undefined ? "\u2014" : (t <= 0 ? "now" : t + " min");
+      const col = r.routeColor ? `#${r.routeColor}` : (r.mode === "rail" ? "#2563eb" : "var(--invert-bg)");
+      const fg = r.routeColor || r.mode === "rail" ? "#fff" : "var(--invert-ink)";
       return `<button class="sc-chip${r.live ? " live" : ""}" data-route="${escapeHtml(r.routeId)}" data-feed="${escapeHtml(r.feed)}">
-        <span class="sc-rt">${escapeHtml(badgeLabel(r.route))}</span>
-        <span class="sc-when">${when}</span>
+        <span class="sc-rt" style="background:${col};color:${fg}">${escapeHtml(badgeLabel(r.route))}</span>
+        <span class="sc-col"><span class="sc-tw">${escapeHtml(titleCase(r.towards || ""))}</span><span class="sc-when">${when}</span></span>
+        ${r.live ? '<span class="sc-dot" title="Live"></span>' : ""}
       </button>`;
     }).join("");
     stopCardEl.querySelector(".sc-body").innerHTML = `
-      <div class="sc-meta">${routes.length} service${routes.length === 1 ? "" : "s"}</div>
+      <div class="sc-meta">${routes.length} route${routes.length === 1 ? "" : "s"}${liveCount ? ` · <span class="sc-livetag">LIVE</span> ${liveCount} approaching` : ""}</div>
       <div class="sc-grid">${chips || "<span class='sc-empty'>No departures right now</span>"}</div>
-      ${liveCount ? `<div class="sc-live"><span class="sc-livetag">LIVE</span> ${liveCount} ${vehicleNoun(liveCount !== 1)} approaching</div>` : ""}`;
+      <button type="button" class="sc-plan" data-plan>Plan a journey from here \u2192</button>`;
     stopCardEl.querySelectorAll(".sc-chip").forEach((c) =>
       c.addEventListener("click", () => {
         hideStopCard();
         selectRoute(c.dataset.route, c.dataset.feed).catch(showError);
       })
     );
+    stopCardEl.querySelector("[data-plan]").addEventListener("click", () => {
+      hideStopCard();
+      state.journey.from = { lat: stop.lat, lon: stop.lon, name: stop.name };
+      jpFrom.value = titleCase(stop.name);
+      setView("journey");
+      updatePlanButton();
+      jpTo?.focus();
+    });
   } catch {
     stopCardEl.querySelector(".sc-body").innerHTML = "<div class='sc-empty'>Couldn\u2019t load this stop</div>";
   }
