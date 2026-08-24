@@ -3832,10 +3832,14 @@ html[data-theme="dark"] .net-stop { border-color: #cfe0f5; background: #0d1522; 
 
 /* While the stop card is open, the main panel steps aside so the card is the
    focus; closing the card brings the panel back. */
-body.stop-open .rail {
+body.stop-open .rail,
+body.stop-open .status-bar,
+body.stop-open .region-toggle,
+body.stop-open .legend,
+body.stop-open .map-controls {
   opacity: 0;
   pointer-events: none;
-  transform: translateY(12px);
+  transform: translateY(8px);
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 

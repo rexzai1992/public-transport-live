@@ -21,7 +21,8 @@ import { getAircraft, getFlightRoute, findFlight } from "./flights.js";
 import { getKlAlerts } from "./mtrec.js";
 import { registerToken, unregisterToken, pushToAll, tokenCount } from "./push.js";
 import { subscribeWeb, unsubscribeWeb, pushWebAll, webSubCount } from "./webpush.js";
-import { bumpVisit, bumpApi, bumpDay, bumpRoute, bumpActive, bumpTier, addFeedback, bumpInstall, bumpDevice, bumpGuideView, bumpFromGuide, visitTotal, getStats } from "./stats.js";
+import { bumpVisit, bumpApi, bumpDay, bumpRoute, bumpActive, bumpTier, addFeedback, bumpInstall, bumpDevice, bumpGuideView, bumpFromGuide, bumpGeo, visitTotal, getStats } from "./stats.js";
+import geoip from "geoip-lite";
 import {
   categoryParamSchema,
   journeySchema,
@@ -437,6 +438,16 @@ apiRouter.get("/visit", (req, res) => {
   }
   if (req.query.ref === "guide") {
     bumpFromGuide();
+  }
+  // Transient IP -> country/state for an aggregate counter; the IP is never
+  // stored, only the geography label is incremented.
+  try {
+    const ip = (req.ip || "").replace(/^::ffff:/, "");
+    const geo = ip ? geoip.lookup(ip) : null;
+    if (geo) bumpGeo(geo.country, geo.region);
+    else bumpGeo("", "");
+  } catch {
+    /* geo optional */
   }
   res.json({ visits: bumpVisit(src) });
 });
