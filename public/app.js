@@ -847,7 +847,18 @@ function drawMap(data) {
       }),
     onEachFeature: (feature, layer) => {
       const props = feature.properties;
-      layer.bindPopup(stopPopup(feature), STOP_POPUP_OPTS);
+      const g = feature.geometry?.coordinates;
+      // Unified: a stop tap always opens the one bottom board card, whether
+      // the stop came from the all-stops layer or a selected route.
+      layer.on("click", () =>
+        openStopBoard({
+          key: `${state.category}:${props.stopId}`,
+          stopId: String(props.stopId),
+          name: props.name,
+          lat: g ? g[1] : layer.getLatLng().lat,
+          lon: g ? g[0] : layer.getLatLng().lng
+        })
+      );
       const sequence = Number(props.sequence);
       const tooltipText = Number.isFinite(sequence) && sequence > 0 ? `${sequence}. ${props.name}` : props.name;
       layer.bindTooltip(escapeHtml(tooltipText), {
@@ -1444,7 +1455,6 @@ function updateStopPopups() {
     const updated = stopById.get(String(feature.properties.stopId));
     if (updated) {
       feature.properties = updated.properties;
-      layer.bindPopup(stopPopup(updated), STOP_POPUP_OPTS);
     }
   });
 }
@@ -2113,7 +2123,14 @@ function focusStop(stopId) {
   }
   const latlng = layer.getLatLng();
   flyToVisible(latlng, Math.max(map.getZoom(), 16), { duration: 0.6 });
-  layer.openPopup();
+  const props = layer.feature?.properties || {};
+  openStopBoard({
+    key: `${state.category}:${props.stopId ?? stopId}`,
+    stopId: String(props.stopId ?? stopId),
+    name: props.name || "Stop",
+    lat: latlng.lat,
+    lon: latlng.lng
+  });
 }
 
 /* ------------------------------------------------------------------------ */
@@ -2653,6 +2670,7 @@ async function loadStopsInView() {
 let stopCardEl = null;
 function hideStopCard() {
   if (stopCardEl) { stopCardEl.classList.remove("show"); }
+  document.body.classList.remove("stop-open");
 }
 
 async function openStopBoard(stop) {
@@ -2669,6 +2687,7 @@ async function openStopBoard(stop) {
     </div><div class="sc-body">Loading\u2026</div>`;
   stopCardEl.querySelector(".sc-x").addEventListener("click", hideStopCard);
   stopCardEl.classList.add("show");
+  document.body.classList.add("stop-open"); // panel steps aside while the card is up
 
   try {
     const data = await getJson(`/api/stops/board?key=${encodeURIComponent(stop.key)}`);
