@@ -3830,6 +3830,15 @@ html[data-theme="dark"] .net-stop { border-color: #cfe0f5; background: #0d1522; 
 
 .stop-card.show { transform: translate(-50%, 0); }
 
+/* While the stop card is open, the main panel steps aside so the card is the
+   focus; closing the card brings the panel back. */
+body.stop-open .rail {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(12px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
 .sc-head { align-items: center; display: flex; gap: 10px; }
 .sc-code {
   background: color-mix(in srgb, #d64545 16%, transparent);
