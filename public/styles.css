@@ -297,10 +297,10 @@ body:not(.has-route):not(.has-journey) .discover {
 
 h1 {
   color: var(--ink);
-  font-size: 21px;
+  font-size: 19px;
   font-weight: 600;
   letter-spacing: -0.015em;
-  line-height: 1.2;
+  line-height: 1.15;
   margin: 0;
 }
 
@@ -2923,11 +2923,12 @@ html[data-theme="dark"] .map-btn.discover {
   cursor: pointer;
   display: flex;
   font-family: inherit;
-  font-size: 15px;
-  gap: 5px;
-  height: 30px;
-  padding: 0 9px;
+  font-size: 12px;
+  gap: 4px;
+  height: 26px;
+  padding: 0 7px;
 }
+.region-btn small { font-size: 10.5px; }
 
 .region-btn small {
   font-size: 11px;
