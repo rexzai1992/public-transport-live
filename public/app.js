@@ -2555,6 +2555,88 @@ try {
   /* no storage, no pulse */
 }
 
+/* ------------------------------------------------------------------------ */
+/* All-network stops layer — every bus stop / station on the map. Loaded by  */
+/* viewport (zoom >= 14) so it never tries to draw tens of thousands at once. */
+/* Tap one for its live/scheduled board, green when a vehicle is inbound.     */
+/* ------------------------------------------------------------------------ */
+const stopsButton = document.getElementById("stopsButton");
+const allStops = { on: false, layer: null, debounce: null, loadedKey: "" };
+
+function allStopIcon() {
+  return L.divIcon({ className: "", html: '<span class="net-stop"></span>', iconSize: [12, 12], iconAnchor: [6, 6] });
+}
+
+async function loadStopsInView() {
+  if (!allStops.on) return;
+  if (map.getZoom() < 14) {
+    allStops.layer?.clearLayers();
+    setStatus("Zoom in to see stops", "idle");
+    return;
+  }
+  const b = map.getBounds();
+  const key = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map((n) => n.toFixed(2)).join(",");
+  if (key === allStops.loadedKey) return;
+  allStops.loadedKey = key;
+  try {
+    const data = await getJson(`/api/stops/in-bounds?minLat=${b.getSouth().toFixed(4)}&minLon=${b.getWest().toFixed(4)}&maxLat=${b.getNorth().toFixed(4)}&maxLon=${b.getEast().toFixed(4)}`);
+    if (!allStops.on) return;
+    allStops.layer ??= L.layerGroup().addTo(map);
+    allStops.layer.clearLayers();
+    for (const stop of data.stops || []) {
+      const m = L.marker([stop.lat, stop.lon], { icon: allStopIcon(), keyboard: false });
+      m.on("click", () => openStopBoard(stop, m));
+      allStops.layer.addLayer(m);
+    }
+    setStatus(`${(data.stops || []).length} stops shown`, "idle");
+  } catch {
+    /* leave what's there */
+  }
+}
+
+async function openStopBoard(stop, marker) {
+  marker.bindPopup("<div class='board-pop'>Loading\u2026</div>", { className: "board-popup", maxWidth: 300 }).openPopup();
+  try {
+    const data = await getJson(`/api/stops/board?key=${encodeURIComponent(stop.key)}`);
+    const rows = (data.routes || []).slice(0, 8).map((r) => {
+      const when = r.times.length
+        ? r.times.map((t, i) => `<span class="bt${i === 0 && r.live ? " live" : ""}">${t <= 0 ? "due" : t + "m"}</span>`).join(" ")
+        : `<span class="bt none">no more today</span>`;
+      const col = r.routeColor ? `#${r.routeColor}` : (r.mode === "rail" ? "#2563eb" : "#111");
+      return `<div class="brow">
+        <span class="bbadge" style="background:${col}">${escapeHtml(badgeLabel(r.route))}</span>
+        <span class="bmain"><span class="btowards">${escapeHtml(titleCase(r.towards))}</span><span class="btimes">${when}</span></span>
+        ${r.live ? '<span class="blive" title="Live vehicle approaching">\u25cf</span>' : ""}
+      </div>`;
+    }).join("");
+    marker.setPopupContent(`<div class="board-pop">
+      <div class="board-title">${escapeHtml(titleCase(stop.name))}${data.routes?.some((r) => r.live) ? ' <span class="board-livetag">LIVE</span>' : ""}</div>
+      ${rows || "<div class='bt none'>No departures</div>"}
+    </div>`);
+  } catch {
+    marker.setPopupContent("<div class='board-pop'>Couldn\u2019t load this stop</div>");
+  }
+}
+
+function setAllStops(on) {
+  allStops.on = on;
+  stopsButton.classList.toggle("on", on);
+  stopsButton.setAttribute("aria-pressed", String(on));
+  if (on) {
+    allStops.loadedKey = "";
+    loadStopsInView();
+  } else {
+    allStops.layer?.clearLayers();
+  }
+}
+
+stopsButton.addEventListener("click", () => setAllStops(!allStops.on));
+map.on("moveend", () => {
+  if (!allStops.on) return;
+  window.clearTimeout(allStops.debounce);
+  allStops.debounce = window.setTimeout(loadStopsInView, 400);
+});
+
 flightsButton.addEventListener("click", () => {
   flightsButton.classList.remove("discover");
   try {

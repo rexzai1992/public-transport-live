@@ -14,7 +14,7 @@ import {
   vehicleBelongsToRoute
 } from "./gtfsStatic.js";
 import { buildRouteStopSchedule, malaysiaClock, withNextDepartures } from "./schedule.js";
-import { planJourney, searchStops, nearbyDepartures, stopBoard } from "./journey.js";
+import { planJourney, searchStops, nearbyDepartures, stopBoard, stopsInBounds } from "./journey.js";
 import { getSgStopArrivals } from "./sg/vehicles.js";
 import { getTrainAlerts, getPlatformCrowd } from "./sg/datamall.js";
 import { getAircraft, getFlightRoute, findFlight } from "./flights.js";
@@ -252,6 +252,26 @@ apiRouter.get("/stops/search", async (req, res, next) => {
   try {
     const { q, feeds } = stopSearchSchema.parse(req.query);
     res.json({ query: q, stops: await searchStops(q, parseFeeds(feeds)) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* All served stops within a viewport box — the map's whole-network stop layer. */
+apiRouter.get("/stops/in-bounds", async (req, res, next) => {
+  try {
+    const minLat = Number(req.query.minLat), minLon = Number(req.query.minLon);
+    const maxLat = Number(req.query.maxLat), maxLon = Number(req.query.maxLon);
+    if (![minLat, minLon, maxLat, maxLon].every(Number.isFinite)) {
+      res.status(400).json({ error: "minLat,minLon,maxLat,maxLon required" });
+      return;
+    }
+    if (maxLat - minLat > 0.6 || maxLon - minLon > 0.6) {
+      res.json({ stops: [], tooWide: true });
+      return;
+    }
+    res.setHeader("Cache-Control", "public, max-age=60");
+    res.json({ stops: await stopsInBounds([...FEED_IDS], { minLat, minLon, maxLat, maxLon }) });
   } catch (error) {
     next(error);
   }
