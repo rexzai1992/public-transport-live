@@ -3701,7 +3701,6 @@ html[data-theme="dark"] .map-btn.discover {
 
 
   /* Minimised: keep the identity row, hide the rest so nothing half-shows. */
-  body.sheet-min .search,
   body.sheet-min .block,
   body.sheet-min .list-head,
   body.sheet-min .routes,
@@ -3750,8 +3749,8 @@ html[data-theme="dark"] .map-btn.discover {
 
   /* Minimised: identity row only, map almost entirely visible. */
   body.sheet-min .rail {
-    top: 76vh;
-    top: 76dvh;
+    top: 78vh;
+    top: 78dvh;
   }
 
   /* Half: the default. The map stays genuinely usable. */
