@@ -2643,30 +2643,47 @@ body.mode-rail .legend-rail {
   position: fixed;
   top: calc(var(--sp-3) + var(--safe-top));
   left: 50%;
-  transform: translateX(-50%) translateY(-8px);
-  width: calc(100vw - 2 * var(--sp-4));
-  max-width: 460px;
-  max-height: 40vh;
-  overflow-y: auto;
+  transform: translateX(-50%) translateY(-10px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(92vw, 400px);
   z-index: 900;
-  background: color-mix(in srgb, #d64545 22%, var(--glass-raised));
+  background: color-mix(in srgb, #d64545 26%, var(--glass-raised));
   backdrop-filter: blur(var(--blur));
   -webkit-backdrop-filter: blur(var(--blur));
-  border: 1px solid color-mix(in srgb, #d64545 45%, transparent);
-  border-radius: var(--r-panel);
+  border: 1px solid color-mix(in srgb, #d64545 50%, transparent);
+  border-radius: 999px;
   box-shadow: var(--shadow);
   color: var(--ink);
   font-size: 12.5px;
-  line-height: 1.45;
+  line-height: 1.35;
   opacity: 0;
-  padding: 12px 40px 12px var(--sp-4);
+  padding: 8px 8px 8px 14px;
   transition: opacity 0.25s ease, transform 0.25s ease;
 }
-
 .alert-strip:not(.hidden) {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+.alert-warn { flex: none; }
+.alert-text {
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Expanded: becomes a rounded card showing the full advisory. */
+.alert-strip.expanded {
+  border-radius: var(--r-panel);
+  flex-wrap: wrap;
+  max-width: min(92vw, 440px);
+  padding: 12px 14px;
+}
+.alert-strip.expanded .alert-text { white-space: normal; font-weight: 700; }
+.alert-full { flex-basis: 100%; margin-top: 6px; }
 
 .alert-strip b {
   font-weight: 700;
