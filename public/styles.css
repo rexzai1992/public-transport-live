@@ -3793,3 +3793,78 @@ html[data-theme="dark"] .map-btn.discover {
     display: none;
   }
 }
+
+/* All-network stop dots + tap-for-board popup. */
+.net-stop {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--glass-raised);
+  border: 2.5px solid var(--ink-2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+html[data-theme="dark"] .net-stop { border-color: #cfe0f5; background: #0d1522; }
+
+.board-pop { font-size: 12.5px; min-width: 210px; }
+.board-title {
+  align-items: center;
+  display: flex;
+  font-size: 14px;
+  font-weight: 700;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.board-livetag {
+  background: var(--live);
+  border-radius: 5px;
+  color: #04120a;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+}
+.brow {
+  align-items: center;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  gap: 9px;
+  padding: 7px 0;
+}
+.brow:first-of-type { border-top: 0; }
+.bbadge {
+  border-radius: 6px;
+  color: #fff;
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 700;
+  min-width: 34px;
+  padding: 3px 7px;
+  text-align: center;
+}
+.bmain { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.btowards { color: var(--ink-2); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btimes { display: flex; flex-wrap: wrap; gap: 5px; }
+.bt {
+  background: var(--hover);
+  border-radius: 5px;
+  color: var(--ink);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  padding: 2px 7px;
+}
+.bt.live { background: color-mix(in srgb, var(--live) 22%, transparent); color: var(--live); }
+.bt.none { background: transparent; color: var(--ink-3); font-weight: 500; padding-left: 0; }
+.blive { color: var(--live); font-size: 12px; margin-left: auto; }
+
+.board-popup .leaflet-popup-content-wrapper {
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+  border: 1px solid var(--edge);
+  border-radius: var(--r-field);
+  color: var(--ink);
+}
+.board-popup .leaflet-popup-tip { background: var(--glass-raised); }
