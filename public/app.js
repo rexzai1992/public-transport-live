@@ -5039,9 +5039,18 @@ async function refreshAlerts() {
     if (!alerts.length || digest === seen) {
       strip.classList.add("hidden");
     } else {
+      // Compact pill: one short line (line name + status), tap to expand for
+      // the full advisory. Short label = the part before the first dash.
+      const summary = alerts.length === 1
+        ? `${alerts[0].line} · ${alerts[0].message.split("\u2014")[0].split(" - ")[0].trim()}`
+        : `${alerts.length} service alerts`;
+      const full = alerts.map((a) => `<b>${escapeHtml(a.line)}</b> ${escapeHtml(a.message)}`).join("<br>");
+      strip.classList.remove("expanded");
       strip.innerHTML =
-        alerts.map((a) => `<b>${escapeHtml(a.line)}</b> ${escapeHtml(a.message)}`).join("<br>") +
-        `<button type="button" class="alert-close" aria-label="Dismiss">\u00d7</button>`;
+        `<span class="alert-warn">\u26a0</span>` +
+        `<span class="alert-text">${escapeHtml(summary)}</span>` +
+        `<button type="button" class="alert-close" aria-label="Dismiss">\u00d7</button>` +
+        `<div class="alert-full" hidden>${full}</div>`;
       strip.classList.remove("hidden");
       const dismiss = () => {
         strip.classList.add("hidden");
@@ -5049,7 +5058,14 @@ async function refreshAlerts() {
           sessionStorage.setItem("rapidbus.alertSeen", digest);
         } catch { /* optional */ }
       };
-      strip.querySelector(".alert-close").addEventListener("click", dismiss);
+      strip.querySelector(".alert-close").addEventListener("click", (e) => { e.stopPropagation(); dismiss(); });
+      // Tap the pill to reveal/hide the full text.
+      strip.querySelector(".alert-text").addEventListener("click", () => {
+        const f = strip.querySelector(".alert-full");
+        const showing = strip.classList.toggle("expanded");
+        f.hidden = !showing;
+        window.clearTimeout(state.alertTimer);
+      });
       window.clearTimeout(state.alertTimer);
       state.alertTimer = window.setTimeout(dismiss, 12000);
     }
