@@ -13,7 +13,7 @@
    Nothing here invents freshness it does not have.
 */
 
-const VERSION = "rapidbus-v12";
+const VERSION = "rapidbus-v13";
 const SHELL_CACHE = `${VERSION}-shell`;
 
 const SHELL_ASSETS = [
