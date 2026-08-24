@@ -239,6 +239,9 @@ document.getElementById("ps").addEventListener("click",async()=>{
 });
 </script>
 
+<h2>Where visitors are</h2>
+<table id="geo"><tr><th>Location</th><th>Visits</th></tr></table>
+
 <h2>Guide pages — most read</h2>
 <table id="gp"><tr><th>Page</th><th>Views</th></tr></table>
 
@@ -325,6 +328,8 @@ fetch("/my-admin/data").then((r)=>r.json()).then((d)=>{
   document.getElementById("fbh").textContent="Feedback"+(d.feedbackCount?" \u2014 "+d.feedbackAvg+"\u2605 avg \u00b7 "+d.feedbackCount+" total":"");
   document.getElementById("fb").insertAdjacentHTML("beforeend",
     (d.feedback||[]).map((f)=>"<tr><td>"+f.at+"</td><td>"+"\u2605".repeat(f.stars)+"</td><td>"+(f.msg?f.msg.replace(/[<>&]/g,(c)=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])):"\u2014")+"</td></tr>").join("")||"<tr><td colspan=3>none yet</td></tr>");
+  document.getElementById("geo").insertAdjacentHTML("beforeend",
+    (d.geo||[]).map((g)=>"<tr><td>"+g[0]+"</td><td>"+g[1]+"</td></tr>").join("")||"<tr><td colspan=2>none yet</td></tr>");
   document.getElementById("gp").insertAdjacentHTML("beforeend",
     (d.guidePages||[]).map((g)=>"<tr><td>"+g[0]+"</td><td>"+g[1]+"</td></tr>").join("")||"<tr><td colspan=2>none yet</td></tr>");
   document.getElementById("routes").insertAdjacentHTML("beforeend",

@@ -873,6 +873,8 @@ export type StopRouteDeparture = {
       nothing left today — worth showing, because "no more buses" is an answer
       the commuter needs as much as "4 minutes". */
   times: number[];
+  /** A live vehicle of this route is approaching the stop right now. */
+  live: boolean;
 };
 
 export type StopBoard = {
@@ -928,7 +930,8 @@ export async function stopBoard(
         directionId: pattern.directionId,
         towards,
         mode: pattern.mode,
-        times: []
+        times: [],
+        live: false
       };
       byRoute.set(id, entry);
     }
@@ -945,6 +948,12 @@ export async function stopBoard(
     /* Merged patterns can publish the same minute twice; "8 min · 8 min" reads
        as a fault rather than as two vehicles. */
     entry.times = [...new Set(entry.times)].sort((a, b) => a - b).slice(0, 4);
+  }
+
+  // Live-green: which serving routes have a vehicle approaching this stop now.
+  const live = await liveRoutesForStop(stop, network.patternsByStop.get(key) ?? [], network);
+  for (const entry of routes) {
+    if (live.has(entry.routeId) || live.has(entry.route)) entry.live = true;
   }
 
   /* Soonest first; routes with nothing left sink to the bottom rather than
@@ -1015,4 +1024,71 @@ export async function searchStops(
   }
 
   return result;
+}
+
+/* ------------------------------------------------------------------------- */
+/* All-network stop browsing: every served stop on the map, tap for its      */
+/* timetable and a live-green flag when a vehicle is actually approaching.    */
+/* ------------------------------------------------------------------------- */
+import { getVehiclePositions } from "./gtfsRealtime.js";
+import { getSgStopArrivals } from "./sg/vehicles.js";
+
+export type MapStop = { key: string; feed: FeedId; stopId: string; name: string; lat: number; lon: number; mode: "bus" | "rail" };
+
+/** Served stops inside a viewport box, capped. Only served stops (something
+    departs from them) so the map isn't littered with disused points. */
+export async function stopsInBounds(
+  feeds: FeedId[],
+  box: { minLat: number; minLon: number; maxLat: number; maxLon: number },
+  limit = 700
+): Promise<MapStop[]> {
+  const network = await getNetwork(feeds);
+  const out: MapStop[] = [];
+  for (const stop of network.stops.values()) {
+    if (stop.lat < box.minLat || stop.lat > box.maxLat || stop.lon < box.minLon || stop.lon > box.maxLon) continue;
+    const patterns = network.patternsByStop.get(stop.key);
+    if (!patterns?.length) continue;
+    out.push({
+      key: stop.key,
+      feed: stop.feed,
+      stopId: stop.stopId,
+      name: stop.name,
+      lat: stop.lat,
+      lon: stop.lon,
+      mode: network.patterns[patterns[0]].mode
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/* Which serving routes have a live vehicle bearing down on this stop. SG buses
+   use LTA's per-stop arrival feed (real monitored flag); MY feeds with
+   positions are checked by proximity; rail has no positions so stays empty. */
+async function liveRoutesForStop(stop: StopRef, patternIdx: number[], network: Network): Promise<Set<string>> {
+  const live = new Set<string>();
+  if (stop.feed === "sg-bus") {
+    try {
+      for (const svc of await getSgStopArrivals(stop.stopId)) {
+        if (svc.etas[0]?.monitored) live.add(svc.service);
+      }
+    } catch {
+      /* live optional */
+    }
+    return live;
+  }
+  const servingRouteIds = new Set(patternIdx.map((i) => network.patterns[i].routeId));
+  if (!servingRouteIds.size) return live;
+  try {
+    const vehicles = await getVehiclePositions(stop.feed, await getStaticFeed(stop.feed).catch(() => undefined));
+    for (const v of vehicles) {
+      if (v.routeId && servingRouteIds.has(v.routeId) &&
+          haversineMeters(v.position.lat, v.position.lon, stop.lat, stop.lon) <= 2000) {
+        live.add(v.routeId);
+      }
+    }
+  } catch {
+    /* no realtime for this feed */
+  }
+  return live;
 }
