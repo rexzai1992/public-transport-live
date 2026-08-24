@@ -2565,7 +2565,7 @@ try {
 /* Auto: stops appear when zoomed into street level and no route is selected
    (a selected route shows its own stops instead, so they never double up). */
 const allStops = { layer: null, debounce: null, loadedKey: "" };
-const STOPS_MIN_ZOOM = 15;
+const STOPS_MIN_ZOOM = 14;
 
 function allStopIcon() {
   return L.divIcon({ className: "", html: '<span class="net-stop"></span>', iconSize: [12, 12], iconAnchor: [6, 6] });
@@ -2581,6 +2581,11 @@ async function loadStopsInView() {
   if (!stopsShouldShow()) {
     allStops.layer?.clearLayers();
     allStops.loadedKey = "";
+    // Nudge the user toward the zoom where stops appear, while browsing.
+    if (!state.activeRouteId && !document.body.classList.contains("has-journey") &&
+        map.getZoom() < STOPS_MIN_ZOOM && !offline) {
+      setLiveText("Zoom in to see stops", false);
+    }
     return;
   }
   const b = map.getBounds();
