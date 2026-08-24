@@ -2594,7 +2594,7 @@ async function loadStopsInView() {
     allStops.layer.clearLayers();
     for (const stop of data.stops || []) {
       const m = L.marker([stop.lat, stop.lon], { icon: allStopIcon(), keyboard: false });
-      m.on("click", () => openStopBoard(stop, m));
+      m.on("click", () => openStopBoard(stop));
       allStops.layer.addLayer(m);
     }
   } catch {
@@ -2602,27 +2602,50 @@ async function loadStopsInView() {
   }
 }
 
-async function openStopBoard(stop, marker) {
-  marker.bindPopup("<div class='board-pop'>Loading\u2026</div>", { className: "board-popup", maxWidth: 300 }).openPopup();
+let stopCardEl = null;
+function hideStopCard() {
+  if (stopCardEl) { stopCardEl.classList.remove("show"); }
+}
+
+async function openStopBoard(stop) {
+  if (!stopCardEl) {
+    stopCardEl = document.createElement("div");
+    stopCardEl.className = "stop-card";
+    document.body.appendChild(stopCardEl);
+  }
+  const code = String(stop.stopId).split(":").pop();
+  stopCardEl.innerHTML = `<div class="sc-head">
+      <span class="sc-code">${escapeHtml(code)}</span>
+      <span class="sc-name">${escapeHtml(titleCase(stop.name))}</span>
+      <button class="sc-x" type="button" aria-label="Close">\u00d7</button>
+    </div><div class="sc-body">Loading\u2026</div>`;
+  stopCardEl.querySelector(".sc-x").addEventListener("click", hideStopCard);
+  stopCardEl.classList.add("show");
+
   try {
     const data = await getJson(`/api/stops/board?key=${encodeURIComponent(stop.key)}`);
-    const rows = (data.routes || []).slice(0, 8).map((r) => {
-      const when = r.times.length
-        ? r.times.map((t, i) => `<span class="bt${i === 0 && r.live ? " live" : ""}">${t <= 0 ? "due" : t + "m"}</span>`).join(" ")
-        : `<span class="bt none">no more today</span>`;
-      const col = r.routeColor ? `#${r.routeColor}` : (r.mode === "rail" ? "#2563eb" : "#111");
-      return `<div class="brow">
-        <span class="bbadge" style="background:${col}">${escapeHtml(badgeLabel(r.route))}</span>
-        <span class="bmain"><span class="btowards">${escapeHtml(titleCase(r.towards))}</span><span class="btimes">${when}</span></span>
-        ${r.live ? '<span class="blive" title="Live vehicle approaching">\u25cf</span>' : ""}
-      </div>`;
+    const routes = data.routes || [];
+    const liveCount = routes.filter((r) => r.live).length;
+    const chips = routes.map((r) => {
+      const t = r.times[0];
+      const when = t === undefined ? "" : (t <= 0 ? "now" : t + "m");
+      return `<button class="sc-chip${r.live ? " live" : ""}" data-route="${escapeHtml(r.routeId)}" data-feed="${escapeHtml(r.feed)}">
+        <span class="sc-rt">${escapeHtml(badgeLabel(r.route))}</span>
+        <span class="sc-when">${when}</span>
+      </button>`;
     }).join("");
-    marker.setPopupContent(`<div class="board-pop">
-      <div class="board-title">${escapeHtml(titleCase(stop.name))}${data.routes?.some((r) => r.live) ? ' <span class="board-livetag">LIVE</span>' : ""}</div>
-      ${rows || "<div class='bt none'>No departures</div>"}
-    </div>`);
+    stopCardEl.querySelector(".sc-body").innerHTML = `
+      <div class="sc-meta">${routes.length} service${routes.length === 1 ? "" : "s"}</div>
+      <div class="sc-grid">${chips || "<span class='sc-empty'>No departures right now</span>"}</div>
+      ${liveCount ? `<div class="sc-live"><span class="sc-livetag">LIVE</span> ${liveCount} ${vehicleNoun(liveCount !== 1)} approaching</div>` : ""}`;
+    stopCardEl.querySelectorAll(".sc-chip").forEach((c) =>
+      c.addEventListener("click", () => {
+        hideStopCard();
+        selectRoute(c.dataset.route, c.dataset.feed).catch(showError);
+      })
+    );
   } catch {
-    marker.setPopupContent("<div class='board-pop'>Couldn\u2019t load this stop</div>");
+    stopCardEl.querySelector(".sc-body").innerHTML = "<div class='sc-empty'>Couldn\u2019t load this stop</div>";
   }
 }
 
