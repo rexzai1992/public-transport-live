@@ -12,6 +12,8 @@ const root = resolve(here, "..");
 const source = resolve(root, "..", "public");
 const target = resolve(root, "www");
 
+import { readFileSync } from "node:fs";
+const appVersion = JSON.parse(readFileSync(resolve(root, "..", "app-version.json"), "utf-8")).version;
 const apiBase = process.env.RAPIDBUS_API_BASE?.trim();
 if (!apiBase) {
   console.error("\nRAPIDBUS_API_BASE is not set.");
@@ -57,7 +59,7 @@ const indexPath = resolve(target, "index.html");
 const html = await readFile(indexPath, "utf8");
 const injected = html.replace(
   "<script src=\"/vendor/leaflet.js\"></script>",
-  `<script>window.RAPIDBUS_API_BASE = ${JSON.stringify(apiBase)};</script>\n    <script src="/vendor/leaflet.js"></script>`
+  `<script>window.RAPIDBUS_API_BASE = ${JSON.stringify(apiBase)}; window.APP_BUILD_VERSION = ${appVersion};</script>\n    <script src="/vendor/leaflet.js"></script>`
 );
 if (injected === html) {
   console.error("\nCould not inject the API base — index.html markup changed.\n");

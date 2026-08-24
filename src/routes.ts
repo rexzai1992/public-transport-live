@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { Router } from "express";
 import { type FeedId, FEED_IDS, FEEDS, feedDefinition } from "./config.js";
 import { buildStopEtas, buildPassedTrips } from "./eta.js";
@@ -422,6 +423,19 @@ apiRouter.get("/visit", (req, res) => {
 
 /* Fired by the static guide site (fetch no-cors); response body is never
    read, so the pinned CORS policy stays untouched. */
+/* Latest APK version, for the in-app update bubble (we are not on Play Store,
+   so sideloaded builds check here). Read from app-version.json each call so a
+   new release only needs that file updated on the server. */
+apiRouter.get("/app-version", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const raw = readFileSync(new URL("../app-version.json", import.meta.url), "utf-8");
+    res.type("json").send(raw);
+  } catch {
+    res.json({ version: 0 });
+  }
+});
+
 apiRouter.get("/push/vapid", (_req, res) => {
   res.setHeader("Cache-Control", "public, max-age=3600");
   res.json({ key: process.env.VAPID_PUBLIC ?? "" });
