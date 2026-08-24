@@ -509,6 +509,7 @@ function searchRoutes() {
 
   renderRouteResults(matches, query);
   maybeOfferFlightSearch(query);
+  maybeSearchStops(query, token);
   if (offline) {
     setStatus("Offline", "idle");
   } else if (state.activeRouteId) {
@@ -567,6 +568,41 @@ function maybeOfferFlightSearch(query) {
   });
 
   routeList.prepend(row);
+}
+
+/* The search box finds stops as well as routes. Matching stops appear as a
+   section above the routes; tapping one opens its station board and flies
+   the map there — the "search for a stop" path alongside tapping the map. */
+async function maybeSearchStops(query, token) {
+  const q = query.trim();
+  document.getElementById("stopSearchBlock")?.remove();
+  if (q.length < 2) return;
+  let stops;
+  try {
+    const data = await getJson(`/api/stops/search?q=${encodeURIComponent(q)}`);
+    stops = (data.stops || []).filter((st) => inRegion(String(st.key).split(":")[0])).slice(0, 6);
+  } catch {
+    return;
+  }
+  if (token !== searchToken || !stops.length) return;
+
+  const block = document.createElement("div");
+  block.id = "stopSearchBlock";
+  block.className = "stop-results";
+  block.innerHTML = `<div class="stop-results-cap">Stops</div>`;
+  for (const st of stops) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "stop-result";
+    row.innerHTML = `<span class="sr-pin"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="6.5" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg></span>
+      <span class="sr-name">${escapeHtml(titleCase(stopDisplayName(st.name)))}</span>`;
+    row.addEventListener("click", () => {
+      flyToVisible([st.lat, st.lon], Math.max(map.getZoom(), 16), { duration: 0.6 });
+      openStopBoard({ key: st.key, stopId: st.stopId, name: st.name, lat: st.lat, lon: st.lon });
+    });
+    block.appendChild(row);
+  }
+  routeList.prepend(block);
 }
 
 function renderRouteResults(matches, query) {
@@ -699,6 +735,8 @@ async function selectRoute(routeId, category, options = {}) {
   }
   state.activeRouteId = routeId;
   document.body.classList.add("has-route");
+  allStops.layer?.clearLayers();
+  allStops.loadedKey = "";
   updateStarButton();
   window.setTimeout(annotateCrowd, 800);
   revealSheet();
@@ -809,7 +847,18 @@ function drawMap(data) {
       }),
     onEachFeature: (feature, layer) => {
       const props = feature.properties;
-      layer.bindPopup(stopPopup(feature), STOP_POPUP_OPTS);
+      const g = feature.geometry?.coordinates;
+      // Unified: a stop tap always opens the one bottom board card, whether
+      // the stop came from the all-stops layer or a selected route.
+      layer.on("click", () =>
+        openStopBoard({
+          key: `${state.category}:${props.stopId}`,
+          stopId: String(props.stopId),
+          name: props.name,
+          lat: g ? g[1] : layer.getLatLng().lat,
+          lon: g ? g[0] : layer.getLatLng().lng
+        })
+      );
       const sequence = Number(props.sequence);
       const tooltipText = Number.isFinite(sequence) && sequence > 0 ? `${sequence}. ${props.name}` : props.name;
       layer.bindTooltip(escapeHtml(tooltipText), {
@@ -1406,7 +1455,6 @@ function updateStopPopups() {
     const updated = stopById.get(String(feature.properties.stopId));
     if (updated) {
       feature.properties = updated.properties;
-      layer.bindPopup(stopPopup(updated), STOP_POPUP_OPTS);
     }
   });
 }
@@ -2075,7 +2123,14 @@ function focusStop(stopId) {
   }
   const latlng = layer.getLatLng();
   flyToVisible(latlng, Math.max(map.getZoom(), 16), { duration: 0.6 });
-  layer.openPopup();
+  const props = layer.feature?.properties || {};
+  openStopBoard({
+    key: `${state.category}:${props.stopId ?? stopId}`,
+    stopId: String(props.stopId ?? stopId),
+    name: props.name || "Stop",
+    lat: latlng.lat,
+    lon: latlng.lng
+  });
 }
 
 /* ------------------------------------------------------------------------ */
@@ -2555,6 +2610,136 @@ try {
   /* no storage, no pulse */
 }
 
+/* ------------------------------------------------------------------------ */
+/* All-network stops layer — every bus stop / station on the map. Loaded by  */
+/* viewport (zoom >= 14) so it never tries to draw tens of thousands at once. */
+/* Tap one for its live/scheduled board, green when a vehicle is inbound.     */
+/* ------------------------------------------------------------------------ */
+/* Auto: stops appear when zoomed into street level and no route is selected
+   (a selected route shows its own stops instead, so they never double up). */
+const allStops = { layer: null, debounce: null, loadedKey: "" };
+const STOPS_MIN_ZOOM = 12;
+
+// Canvas renderer keeps hundreds of stop dots smooth (SVG/DOM would lag).
+const stopsCanvas = L.canvas({ padding: 0.3 });
+function addStopDot(stop) {
+  const m = L.circleMarker([stop.lat, stop.lon], {
+    renderer: stopsCanvas,
+    radius: 5,
+    color: stop.mode === "rail" ? "#2563eb" : "#111827",
+    weight: 2,
+    fillColor: "#ffffff",
+    fillOpacity: 1
+  });
+  m.on("click", () => openStopBoard(stop));
+  return m;
+}
+
+function stopsShouldShow() {
+  return !state.activeRouteId &&
+    !document.body.classList.contains("has-journey") &&
+    map.getZoom() >= STOPS_MIN_ZOOM;
+}
+
+async function loadStopsInView() {
+  if (!stopsShouldShow()) {
+    allStops.layer?.clearLayers();
+    allStops.loadedKey = "";
+    // Nudge the user toward the zoom where stops appear, while browsing.
+    if (!state.activeRouteId && !document.body.classList.contains("has-journey") &&
+        map.getZoom() < STOPS_MIN_ZOOM && !offline) {
+      setLiveText("Zoom in to see stops", false);
+    }
+    return;
+  }
+  const b = map.getBounds();
+  const key = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map((n) => n.toFixed(2)).join(",");
+  if (key === allStops.loadedKey) return;
+  allStops.loadedKey = key;
+  try {
+    const data = await getJson(`/api/stops/in-bounds?minLat=${b.getSouth().toFixed(4)}&minLon=${b.getWest().toFixed(4)}&maxLat=${b.getNorth().toFixed(4)}&maxLon=${b.getEast().toFixed(4)}`);
+    if (!stopsShouldShow()) return; // a route may have opened during the fetch
+    allStops.layer ??= L.layerGroup().addTo(map);
+    allStops.layer.clearLayers();
+    for (const stop of data.stops || []) allStops.layer.addLayer(addStopDot(stop));
+  } catch {
+    /* leave what's there */
+  }
+}
+
+let stopCardEl = null;
+function hideStopCard() {
+  if (stopCardEl) { stopCardEl.classList.remove("show"); }
+  document.body.classList.remove("stop-open");
+}
+
+async function openStopBoard(stop) {
+  if (!stopCardEl) {
+    stopCardEl = document.createElement("div");
+    stopCardEl.className = "stop-card";
+    document.body.appendChild(stopCardEl);
+  }
+  const code = String(stop.stopId).split(":").pop();
+  stopCardEl.innerHTML = `<div class="sc-head">
+      <span class="sc-code">${escapeHtml(code)}</span>
+      <span class="sc-name">${escapeHtml(titleCase(stop.name))}</span>
+      <button class="sc-x" type="button" aria-label="Close">\u00d7</button>
+    </div><div class="sc-body">Loading\u2026</div>`;
+  stopCardEl.querySelector(".sc-x").addEventListener("click", hideStopCard);
+  stopCardEl.classList.add("show");
+  document.body.classList.add("stop-open"); // panel steps aside while the card is up
+
+  try {
+    const data = await getJson(`/api/stops/board?key=${encodeURIComponent(stop.key)}`);
+    // Live-first: an approaching vehicle is the thing you act on, so it leads;
+    // then soonest scheduled; ours groups the whole board this way.
+    const routes = (data.routes || []).slice().sort((a, b) =>
+      Number(b.live) - Number(a.live) ||
+      (a.times[0] ?? Infinity) - (b.times[0] ?? Infinity)
+    );
+    const liveCount = routes.filter((r) => r.live).length;
+    const chips = routes.map((r) => {
+      const t = r.times[0];
+      const when = t === undefined ? "\u2014" : (t <= 0 ? "now" : t + " min");
+      const col = r.routeColor ? `#${r.routeColor}` : (r.mode === "rail" ? "#2563eb" : "var(--invert-bg)");
+      const fg = r.routeColor || r.mode === "rail" ? "#fff" : "var(--invert-ink)";
+      return `<button class="sc-chip${r.live ? " live" : ""}" data-route="${escapeHtml(r.routeId)}" data-feed="${escapeHtml(r.feed)}">
+        <span class="sc-rt" style="background:${col};color:${fg}">${escapeHtml(badgeLabel(r.route))}</span>
+        <span class="sc-col"><span class="sc-tw">${escapeHtml(titleCase(r.towards || ""))}</span><span class="sc-when">${when}</span></span>
+        ${r.live ? '<span class="sc-dot" title="Live"></span>' : ""}
+      </button>`;
+    }).join("");
+    stopCardEl.querySelector(".sc-body").innerHTML = `
+      <div class="sc-meta">${routes.length} route${routes.length === 1 ? "" : "s"}${liveCount ? ` · <span class="sc-livetag">LIVE</span> ${liveCount} approaching` : ""}</div>
+      <div class="sc-grid">${chips || "<span class='sc-empty'>No departures right now</span>"}</div>
+      <button type="button" class="sc-plan" data-plan>Plan a journey from here \u2192</button>`;
+    stopCardEl.querySelectorAll(".sc-chip").forEach((c) =>
+      c.addEventListener("click", () => {
+        hideStopCard();
+        selectRoute(c.dataset.route, c.dataset.feed).catch(showError);
+      })
+    );
+    stopCardEl.querySelector("[data-plan]").addEventListener("click", () => {
+      hideStopCard();
+      state.journey.from = { lat: stop.lat, lon: stop.lon, name: stop.name };
+      jpFrom.value = titleCase(stop.name);
+      setView("journey");
+      updatePlanButton();
+      jpTo?.focus();
+    });
+  } catch {
+    stopCardEl.querySelector(".sc-body").innerHTML = "<div class='sc-empty'>Couldn\u2019t load this stop</div>";
+  }
+}
+
+map.on("moveend", () => {
+  window.clearTimeout(allStops.debounce);
+  allStops.debounce = window.setTimeout(loadStopsInView, 350);
+});
+map.on("zoomend", loadStopsInView);
+// First paint + whenever a route is opened/closed the layer re-evaluates.
+window.setTimeout(loadStopsInView, 1500);
+
 flightsButton.addEventListener("click", () => {
   flightsButton.classList.remove("discover");
   try {
@@ -3006,6 +3191,7 @@ closeDetails.addEventListener("click", () => {
   highlightRouteButton(null);
   setStatus("Ready", "idle");
   syncUrl();
+  window.setTimeout(loadStopsInView, 300);
 });
 
 followButton.addEventListener("click", () => {
@@ -4853,9 +5039,18 @@ async function refreshAlerts() {
     if (!alerts.length || digest === seen) {
       strip.classList.add("hidden");
     } else {
+      // Compact pill: one short line (line name + status), tap to expand for
+      // the full advisory. Short label = the part before the first dash.
+      const summary = alerts.length === 1
+        ? `${alerts[0].line} · ${alerts[0].message.split("\u2014")[0].split(" - ")[0].trim()}`
+        : `${alerts.length} service alerts`;
+      const full = alerts.map((a) => `<b>${escapeHtml(a.line)}</b> ${escapeHtml(a.message)}`).join("<br>");
+      strip.classList.remove("expanded");
       strip.innerHTML =
-        alerts.map((a) => `<b>${escapeHtml(a.line)}</b> ${escapeHtml(a.message)}`).join("<br>") +
-        `<button type="button" class="alert-close" aria-label="Dismiss">\u00d7</button>`;
+        `<span class="alert-warn">\u26a0</span>` +
+        `<span class="alert-text">${escapeHtml(summary)}</span>` +
+        `<button type="button" class="alert-close" aria-label="Dismiss">\u00d7</button>` +
+        `<div class="alert-full" hidden>${full}</div>`;
       strip.classList.remove("hidden");
       const dismiss = () => {
         strip.classList.add("hidden");
@@ -4863,7 +5058,14 @@ async function refreshAlerts() {
           sessionStorage.setItem("rapidbus.alertSeen", digest);
         } catch { /* optional */ }
       };
-      strip.querySelector(".alert-close").addEventListener("click", dismiss);
+      strip.querySelector(".alert-close").addEventListener("click", (e) => { e.stopPropagation(); dismiss(); });
+      // Tap the pill to reveal/hide the full text.
+      strip.querySelector(".alert-text").addEventListener("click", () => {
+        const f = strip.querySelector(".alert-full");
+        const showing = strip.classList.toggle("expanded");
+        f.hidden = !showing;
+        window.clearTimeout(state.alertTimer);
+      });
       window.clearTimeout(state.alertTimer);
       state.alertTimer = window.setTimeout(dismiss, 12000);
     }
@@ -4881,6 +5083,12 @@ try {
   const savedRegion = localStorage.getItem(REGION_KEY);
   if (savedRegion === "my" || savedRegion === "sg") {
     applyRegion(savedRegion);
+    // Recenter the map on the saved region too, so reopening in SG shows
+    // Singapore — not the default KL view, which made it look like it reset.
+    // Skip if a deep link (shared route/journey) is positioning the map.
+    if (!bootRoute && !bootParams.get("jt")) {
+      map.setView(REGION_CENTERS[savedRegion], 11);
+    }
   }
 } catch {
   /* default region stands */

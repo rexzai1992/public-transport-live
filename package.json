@@ -14,6 +14,7 @@
     "express": "^4.19.2",
     "express-rate-limit": "^8.6.2",
     "firebase-admin": "^14.3.0",
+    "geoip-lite": "^2.0.3",
     "gtfs-realtime-bindings": "^1.1.1",
     "jszip": "^3.10.1",
     "morgan": "^1.10.0",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
+    "@types/geoip-lite": "^1.4.4",
     "@types/morgan": "^1.9.9",
     "@types/node": "^22.5.4",
     "@types/web-push": "^3.6.4",

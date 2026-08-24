@@ -36,6 +36,9 @@ type Stats = {
   feedback: { at: string; stars: number; msg?: string }[];
   /** Home-screen installs observed (Chromium appinstalled events). */
   pwaInstalls: number;
+  /** Aggregate visitor geography (label -> count). No IPs stored — the IP is
+      looked up transiently and discarded, only the country/state label counts. */
+  geo: Record<string, number>;
   /** Distinct installed devices seen at least once (counted on first
       standalone open, so it includes iOS and pre-tracking installs). */
   pwaDevices: number;
@@ -54,7 +57,7 @@ function load(): Stats {
   try {
     const parsed = JSON.parse(readFileSync(STATS_FILE, "utf-8")) as Stats;
     if (parsed && typeof parsed.visits === "number") {
-      return { ...parsed, days: parsed.days ?? {}, routes: parsed.routes ?? {}, routeNames: parsed.routeNames ?? {}, feedback: parsed.feedback ?? [], pwaInstalls: parsed.pwaInstalls ?? 0, pwaDevices: parsed.pwaDevices ?? 0, apkDevices: parsed.apkDevices ?? 0, guidePages: parsed.guidePages ?? {} };
+      return { ...parsed, days: parsed.days ?? {}, routes: parsed.routes ?? {}, routeNames: parsed.routeNames ?? {}, feedback: parsed.feedback ?? [], pwaInstalls: parsed.pwaInstalls ?? 0, pwaDevices: parsed.pwaDevices ?? 0, apkDevices: parsed.apkDevices ?? 0, guidePages: parsed.guidePages ?? {}, geo: parsed.geo ?? {} };
     }
   } catch {
     /* first run, or the file is gone */
@@ -76,7 +79,8 @@ function load(): Stats {
     pwaInstalls: 0,
     pwaDevices: 0,
     apkDevices: 0,
-    guidePages: {}
+    guidePages: {},
+    geo: {}
   };
 }
 
@@ -140,6 +144,28 @@ export function bumpVisit(src?: string): number {
 
 export function bumpInstall(): void {
   stats.pwaInstalls += 1;
+  persist();
+}
+
+const MY_STATES: Record<string, string> = {
+  "01": "Johor", "02": "Kedah", "03": "Kelantan", "04": "Melaka", "05": "Negeri Sembilan",
+  "06": "Pahang", "07": "Penang", "08": "Perak", "09": "Perlis", "10": "Selangor",
+  "11": "Terengganu", "12": "Sabah", "13": "Sarawak", "14": "Kuala Lumpur",
+  "15": "Labuan", "16": "Putrajaya"
+};
+
+export function bumpGeo(country: string, region: string): void {
+  let label: string;
+  if (country === "MY") label = `Malaysia · ${MY_STATES[region] || region || "Unknown"}`;
+  else if (country === "SG") label = "Singapore";
+  else if (country) label = country;
+  else label = "Unknown";
+  stats.geo[label] = (stats.geo[label] ?? 0) + 1;
+  const entries = Object.entries(stats.geo);
+  if (entries.length > 300) {
+    entries.sort((a, b) => b[1] - a[1]);
+    stats.geo = Object.fromEntries(entries.slice(0, 200));
+  }
   persist();
 }
 
@@ -233,6 +259,7 @@ export function getStats() {
       .slice(0, 15)
       .map(([key, count]) => ({ key, name: stats.routeNames[key] ?? key, count })),
     pwaInstalls: stats.pwaInstalls,
+    geo: Object.entries(stats.geo).sort((a, b) => b[1] - a[1]).slice(0, 20),
     guidePages: Object.entries(stats.guidePages).sort((a, b) => b[1] - a[1]).slice(0, 12),
     pwaDevices: stats.pwaDevices,
     apkDevices: stats.apkDevices,
