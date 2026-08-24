@@ -509,6 +509,7 @@ function searchRoutes() {
 
   renderRouteResults(matches, query);
   maybeOfferFlightSearch(query);
+  maybeSearchStops(query, token);
   if (offline) {
     setStatus("Offline", "idle");
   } else if (state.activeRouteId) {
@@ -567,6 +568,41 @@ function maybeOfferFlightSearch(query) {
   });
 
   routeList.prepend(row);
+}
+
+/* The search box finds stops as well as routes. Matching stops appear as a
+   section above the routes; tapping one opens its station board and flies
+   the map there — the "search for a stop" path alongside tapping the map. */
+async function maybeSearchStops(query, token) {
+  const q = query.trim();
+  document.getElementById("stopSearchBlock")?.remove();
+  if (q.length < 2) return;
+  let stops;
+  try {
+    const data = await getJson(`/api/stops/search?q=${encodeURIComponent(q)}`);
+    stops = (data.stops || []).filter((st) => inRegion(String(st.key).split(":")[0])).slice(0, 6);
+  } catch {
+    return;
+  }
+  if (token !== searchToken || !stops.length) return;
+
+  const block = document.createElement("div");
+  block.id = "stopSearchBlock";
+  block.className = "stop-results";
+  block.innerHTML = `<div class="stop-results-cap">Stops</div>`;
+  for (const st of stops) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "stop-result";
+    row.innerHTML = `<span class="sr-pin"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="6.5" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg></span>
+      <span class="sr-name">${escapeHtml(titleCase(stopDisplayName(st.name)))}</span>`;
+    row.addEventListener("click", () => {
+      flyToVisible([st.lat, st.lon], Math.max(map.getZoom(), 16), { duration: 0.6 });
+      openStopBoard({ key: st.key, stopId: st.stopId, name: st.name, lat: st.lat, lon: st.lon });
+    });
+    block.appendChild(row);
+  }
+  routeList.prepend(block);
 }
 
 function renderRouteResults(matches, query) {

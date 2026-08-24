@@ -3876,3 +3876,18 @@ html[data-theme="dark"] .sc-code { color: #ef7a6d; }
   cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; margin-top: 14px;
   padding: 11px 0; width: 100%;
 }
+
+/* Stop matches in the main search — a section above route results. */
+.stop-results { margin: 0 0 6px; }
+.stop-results-cap {
+  color: var(--ink-3); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.08em; margin: 4px 0 6px; padding: 0 var(--sp-3); text-transform: uppercase;
+}
+.stop-result {
+  align-items: center; background: transparent; border: 0; border-radius: var(--r-btn);
+  color: var(--ink); cursor: pointer; display: flex; font-family: inherit; font-size: 14px;
+  gap: 10px; padding: 9px var(--sp-3); text-align: left; width: 100%;
+}
+.stop-result:hover { background: var(--hover); }
+.sr-pin { color: var(--ink-3); display: inline-flex; flex: none; }
+.sr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
