@@ -2565,10 +2565,21 @@ try {
 /* Auto: stops appear when zoomed into street level and no route is selected
    (a selected route shows its own stops instead, so they never double up). */
 const allStops = { layer: null, debounce: null, loadedKey: "" };
-const STOPS_MIN_ZOOM = 14;
+const STOPS_MIN_ZOOM = 12;
 
-function allStopIcon() {
-  return L.divIcon({ className: "", html: '<span class="net-stop"></span>', iconSize: [12, 12], iconAnchor: [6, 6] });
+// Canvas renderer keeps hundreds of stop dots smooth (SVG/DOM would lag).
+const stopsCanvas = L.canvas({ padding: 0.3 });
+function addStopDot(stop) {
+  const m = L.circleMarker([stop.lat, stop.lon], {
+    renderer: stopsCanvas,
+    radius: 5,
+    color: stop.mode === "rail" ? "#2563eb" : "#111827",
+    weight: 2,
+    fillColor: "#ffffff",
+    fillOpacity: 1
+  });
+  m.on("click", () => openStopBoard(stop));
+  return m;
 }
 
 function stopsShouldShow() {
@@ -2594,14 +2605,10 @@ async function loadStopsInView() {
   allStops.loadedKey = key;
   try {
     const data = await getJson(`/api/stops/in-bounds?minLat=${b.getSouth().toFixed(4)}&minLon=${b.getWest().toFixed(4)}&maxLat=${b.getNorth().toFixed(4)}&maxLon=${b.getEast().toFixed(4)}`);
-    if (!allStops.on) return;
+    if (!stopsShouldShow()) return; // a route may have opened during the fetch
     allStops.layer ??= L.layerGroup().addTo(map);
     allStops.layer.clearLayers();
-    for (const stop of data.stops || []) {
-      const m = L.marker([stop.lat, stop.lon], { icon: allStopIcon(), keyboard: false });
-      m.on("click", () => openStopBoard(stop));
-      allStops.layer.addLayer(m);
-    }
+    for (const stop of data.stops || []) allStops.layer.addLayer(addStopDot(stop));
   } catch {
     /* leave what's there */
   }
@@ -4989,6 +4996,12 @@ try {
   const savedRegion = localStorage.getItem(REGION_KEY);
   if (savedRegion === "my" || savedRegion === "sg") {
     applyRegion(savedRegion);
+    // Recenter the map on the saved region too, so reopening in SG shows
+    // Singapore — not the default KL view, which made it look like it reset.
+    // Skip if a deep link (shared route/journey) is positioning the map.
+    if (!bootRoute && !bootParams.get("jt")) {
+      map.setView(REGION_CENTERS[savedRegion], 11);
+    }
   }
 } catch {
   /* default region stands */
