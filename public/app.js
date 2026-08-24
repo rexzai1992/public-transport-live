@@ -699,6 +699,8 @@ async function selectRoute(routeId, category, options = {}) {
   }
   state.activeRouteId = routeId;
   document.body.classList.add("has-route");
+  allStops.layer?.clearLayers();
+  allStops.loadedKey = "";
   updateStarButton();
   window.setTimeout(annotateCrowd, 800);
   revealSheet();
@@ -2560,18 +2562,25 @@ try {
 /* viewport (zoom >= 14) so it never tries to draw tens of thousands at once. */
 /* Tap one for its live/scheduled board, green when a vehicle is inbound.     */
 /* ------------------------------------------------------------------------ */
-const stopsButton = document.getElementById("stopsButton");
-const allStops = { on: false, layer: null, debounce: null, loadedKey: "" };
+/* Auto: stops appear when zoomed into street level and no route is selected
+   (a selected route shows its own stops instead, so they never double up). */
+const allStops = { layer: null, debounce: null, loadedKey: "" };
+const STOPS_MIN_ZOOM = 15;
 
 function allStopIcon() {
   return L.divIcon({ className: "", html: '<span class="net-stop"></span>', iconSize: [12, 12], iconAnchor: [6, 6] });
 }
 
+function stopsShouldShow() {
+  return !state.activeRouteId &&
+    !document.body.classList.contains("has-journey") &&
+    map.getZoom() >= STOPS_MIN_ZOOM;
+}
+
 async function loadStopsInView() {
-  if (!allStops.on) return;
-  if (map.getZoom() < 14) {
+  if (!stopsShouldShow()) {
     allStops.layer?.clearLayers();
-    setStatus("Zoom in to see stops", "idle");
+    allStops.loadedKey = "";
     return;
   }
   const b = map.getBounds();
@@ -2588,7 +2597,6 @@ async function loadStopsInView() {
       m.on("click", () => openStopBoard(stop, m));
       allStops.layer.addLayer(m);
     }
-    setStatus(`${(data.stops || []).length} stops shown`, "idle");
   } catch {
     /* leave what's there */
   }
@@ -2618,24 +2626,13 @@ async function openStopBoard(stop, marker) {
   }
 }
 
-function setAllStops(on) {
-  allStops.on = on;
-  stopsButton.classList.toggle("on", on);
-  stopsButton.setAttribute("aria-pressed", String(on));
-  if (on) {
-    allStops.loadedKey = "";
-    loadStopsInView();
-  } else {
-    allStops.layer?.clearLayers();
-  }
-}
-
-stopsButton.addEventListener("click", () => setAllStops(!allStops.on));
 map.on("moveend", () => {
-  if (!allStops.on) return;
   window.clearTimeout(allStops.debounce);
-  allStops.debounce = window.setTimeout(loadStopsInView, 400);
+  allStops.debounce = window.setTimeout(loadStopsInView, 350);
 });
+map.on("zoomend", loadStopsInView);
+// First paint + whenever a route is opened/closed the layer re-evaluates.
+window.setTimeout(loadStopsInView, 1500);
 
 flightsButton.addEventListener("click", () => {
   flightsButton.classList.remove("discover");
@@ -3088,6 +3085,7 @@ closeDetails.addEventListener("click", () => {
   highlightRouteButton(null);
   setStatus("Ready", "idle");
   syncUrl();
+  window.setTimeout(loadStopsInView, 300);
 });
 
 followButton.addEventListener("click", () => {
