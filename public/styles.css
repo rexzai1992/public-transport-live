@@ -3760,9 +3760,12 @@ html[data-theme="dark"] .map-btn.discover {
   }
 
   /* Full: for reading a long list, with a strip of map still showing. */
+  /* Full leaves a real gap below the floating status bar so the drag grip is
+     never hidden behind it — on iPhone 10dvh landed under the notch+status bar
+     and the sheet felt stuck with no way to grab and pull it down. This clears
+     the status bar (safe-top + its height) on every device. */
   body.sheet-full .rail {
-    top: 10vh;
-    top: 10dvh;
+    top: calc(var(--safe-top) + 82px);
   }
 }
 
