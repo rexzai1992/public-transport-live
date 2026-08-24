@@ -188,18 +188,34 @@ th{border:0;color:var(--ink2);font-size:11px;text-transform:uppercase;letter-spa
 td:last-child{font-variant-numeric:tabular-nums;text-align:right}
 .legend{color:var(--ink2);font-size:11.5px;margin:6px 2px 0}
 .legend i{border-radius:2px;display:inline-block;height:3px;margin:0 5px 3px 12px;width:18px;vertical-align:middle}
+.rangebar{align-items:center;display:flex;justify-content:space-between;margin:24px 0 12px}
+.seg{background:var(--card);border:1px solid var(--rule);border-radius:10px;display:flex;gap:2px;padding:3px}
+.seg button{background:transparent;border:0;border-radius:7px;color:var(--ink2);cursor:pointer;font:600 13px system-ui;padding:6px 16px}
+.seg button.on{background:var(--bar);color:#fff}
+.card b{background:linear-gradient(180deg,var(--ink),var(--ink));-webkit-background-clip:text}
+.card.accent b{color:var(--bar)}
 </style></head><body>
 <h1>Public Transport Live</h1><p class="sub" id="sub">Loading\u2026</p>
 
 <h2>System health</h2>
 <div class="panel" id="health"></div>
 
-<h2>Today</h2>
+<div class="rangebar">
+  <h2 id="rangeTitle" style="margin:0;border:0;padding:0">Today</h2>
+  <div class="seg" id="seg">
+    <button data-n="1" class="on">Day</button>
+    <button data-n="7">Week</button>
+    <button data-n="30">Month</button>
+  </div>
+</div>
 <div class="grid" id="cards"></div>
 
-<h2>Last 30 days</h2>
+<h2 id="chartTitle">Trend</h2>
 <div class="panel"><div id="chart"></div>
 <div class="legend"><i style="background:var(--line)"></i>visits <i style="background:var(--line2)"></i>minutes used</div></div>
+
+<h2>All-time</h2>
+<div class="grid" id="lifetime"></div>
 
 <h2 id=fbh>Feedback</h2>
 <table id="fb"><tr><th>When (MYT)</th><th>Stars</th><th>Suggestion</th></tr></table>
@@ -262,27 +278,50 @@ function chart(days){
     dots(vis,"var(--line)")+dots(min,"var(--line2)")+"</svg>";
 }
 
+let DATA=null;
+const FIELDS=["visits","activeSec","s30","s3m","s10m","api","routeViews","journeys","nearby","flights","pwa","apk","guideViews","fromGuide"];
+function sumRange(daysArr,n){
+  const slice=daysArr.slice(-n);
+  const a={}; FIELDS.forEach(f=>a[f]=0);
+  slice.forEach(([,v])=>FIELDS.forEach(f=>a[f]+=(v[f]||0)));
+  return a;
+}
+function renderRange(n){
+  const d=DATA;
+  const daysArr=Object.entries(d.days).sort((a,b)=>a[0]<b[0]?-1:1);
+  const a=sumRange(daysArr,n);
+  const label=n===1?"Today":n===7?"This week":"This month";
+  document.getElementById("rangeTitle").textContent=label;
+  document.getElementById("chartTitle").textContent="Trend \u2014 last "+Math.max(n,7)+" days";
+  const mins=Math.round(a.activeSec/60);
+  const avg=a.visits?Math.round(a.activeSec/a.visits):0;
+  const browser=Math.max(0,a.visits-a.pwa-a.apk);
+  const cards=[["Visits",a.visits,1],["Time used",mins+" min",1],["Avg / visit",avg+" s",0],
+    ["Stayed 30s+",a.s30,0],["Used 3min+",a.s3m,0],["Used 10min+",a.s10m,0],
+    ["Routes opened",a.routeViews,0],["Journeys",a.journeys,0],["Nearby",a.nearby,0],["Flights",a.flights,0],
+    ["Guide views",a.guideViews,0],["From guide \u2192 app",a.fromGuide,1],
+    ["Browser visits",browser,0],["PWA visits",a.pwa,0],["APK visits",a.apk,0],["API calls",a.api,0]];
+  document.getElementById("cards").innerHTML=cards.map(([k,v,acc])=>"<div class='card"+(acc?" accent":"")+"'><b>"+(typeof v==="number"?v.toLocaleString():v)+"</b><span>"+k+"</span></div>").join("");
+  const chartDays=daysArr.slice(-Math.max(n,7));
+  document.getElementById("chart").innerHTML=chartDays.length?chart(chartDays):"<span style=color:var(--ink2);font-size:12px>no days yet</span>";
+}
 fetch("/my-admin/data").then((r)=>r.json()).then((d)=>{
-  const days=Object.entries(d.days).sort((a,b)=>a[0]<b[0]?-1:1).slice(-30);
+  DATA=d;
   const t=d.today;
   document.getElementById("sub").textContent=
     "tracking since "+d.startedTracking+" \u00b7 uptime "+Math.floor(d.uptimeSeconds/3600)+"h "+Math.floor(d.uptimeSeconds%3600/60)+"m";
   document.getElementById("health").innerHTML=
     gauge("Memory (RSS)", d.memoryMb, d.memoryLimitMb, "MB", "pm2 restarts at 100%")+
     gauge("API calls today", t.api||0, d.apiSoftBudget, "calls", "soft budget");
-  const mins=Math.round((t.activeSec||0)/60);
-  const avg=t.visits?Math.round((t.activeSec||0)/t.visits):0;
-  const cards=[["Total visits",d.visits],["Visits today",t.visits],
-    ["Time used",mins+" min"],["Avg / visit",avg+" s"],
-    ["Stayed 30s+",t.s30||0],["Used 3min+",t.s3m||0],["Used 10min+",t.s10m||0],
-    ["Routes opened",t.routeViews],["Journeys",t.journeys],["Nearby",t.nearby],["Flights",t.flights],
-    ["PWA devices (all time)",d.pwaDevices||0],["APK devices (all time)",d.apkDevices||0],
-    ["PWA installs seen",d.pwaInstalls||0],["PWA visits today",t.pwa||0],["APK visits today",t.apk||0],
-    ["Browser visits today",Math.max(0,(t.visits||0)-(t.pwa||0)-(t.apk||0))],
-    ["Guide views today",t.guideViews||0],["Came from guide",t.fromGuide||0],
-    ["Push devices (app)",d.pushDevices||0],["Push devices (web)",d.webPushDevices||0]];
-  document.getElementById("cards").innerHTML=cards.map(([k,v])=>"<div class=card><b>"+(typeof v==="number"?v.toLocaleString():v)+"</b><span>"+k+"</span></div>").join("");
-  document.getElementById("chart").innerHTML=days.length?chart(days):"<span style=color:var(--ink2);font-size:12px>no days yet</span>";
+  const life=[["Total visits",d.visits],["PWA devices",d.pwaDevices||0],["APK devices",d.apkDevices||0],
+    ["PWA installs seen",d.pwaInstalls||0],["Push devices (app)",d.pushDevices||0],["Push devices (web)",d.webPushDevices||0]];
+  document.getElementById("lifetime").innerHTML=life.map(([k,v])=>"<div class=card><b>"+v.toLocaleString()+"</b><span>"+k+"</span></div>").join("");
+  document.getElementById("seg").addEventListener("click",(e)=>{
+    const btn=e.target.closest("button[data-n]"); if(!btn)return;
+    document.querySelectorAll("#seg button").forEach(b=>b.classList.toggle("on",b===btn));
+    renderRange(Number(btn.dataset.n));
+  });
+  renderRange(1);
   document.getElementById("fbh").textContent="Feedback"+(d.feedbackCount?" \u2014 "+d.feedbackAvg+"\u2605 avg \u00b7 "+d.feedbackCount+" total":"");
   document.getElementById("fb").insertAdjacentHTML("beforeend",
     (d.feedback||[]).map((f)=>"<tr><td>"+f.at+"</td><td>"+"\u2605".repeat(f.stars)+"</td><td>"+(f.msg?f.msg.replace(/[<>&]/g,(c)=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])):"\u2014")+"</td></tr>").join("")||"<tr><td colspan=3>none yet</td></tr>");
