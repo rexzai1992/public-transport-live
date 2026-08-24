@@ -3807,64 +3807,61 @@ html[data-theme="dark"] .map-btn.discover {
 
 html[data-theme="dark"] .net-stop { border-color: #cfe0f5; background: #0d1522; }
 
-.board-pop { font-size: 12.5px; min-width: 210px; }
-.board-title {
-  align-items: center;
-  display: flex;
-  font-size: 14px;
-  font-weight: 700;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.board-livetag {
-  background: var(--live);
-  border-radius: 5px;
-  color: #04120a;
-  font-size: 9.5px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  padding: 2px 6px;
-}
-.brow {
-  align-items: center;
-  border-top: 1px solid var(--rule);
-  display: flex;
-  gap: 9px;
-  padding: 7px 0;
-}
-.brow:first-of-type { border-top: 0; }
-.bbadge {
-  border-radius: 6px;
-  color: #fff;
-  flex: none;
-  font-size: 11.5px;
-  font-weight: 700;
-  min-width: 34px;
-  padding: 3px 7px;
-  text-align: center;
-}
-.bmain { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.btowards { color: var(--ink-2); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.btimes { display: flex; flex-wrap: wrap; gap: 5px; }
-.bt {
-  background: var(--hover);
-  border-radius: 5px;
-  color: var(--ink);
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  padding: 2px 7px;
-}
-.bt.live { background: color-mix(in srgb, var(--live) 22%, transparent); color: var(--live); }
-.bt.none { background: transparent; color: var(--ink-3); font-weight: 500; padding-left: 0; }
-.blive { color: var(--live); font-size: 12px; margin-left: auto; }
 
-.board-popup .leaflet-popup-content-wrapper {
+
+/* Stop board as a bottom card (busrouter-style): tap a stop → slides up. */
+.stop-card {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translate(-50%, 110%);
+  width: 100%;
+  max-width: 460px;
+  z-index: 760;
   background: var(--glass-raised);
-  backdrop-filter: blur(var(--blur));
-  -webkit-backdrop-filter: blur(var(--blur));
+  backdrop-filter: blur(var(--blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(150%);
   border: 1px solid var(--edge);
-  border-radius: var(--r-field);
-  color: var(--ink);
+  border-radius: var(--r-panel) var(--r-panel) 0 0;
+  box-shadow: var(--shadow);
+  padding: 16px 16px calc(16px + var(--safe-bottom));
+  transition: transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
-.board-popup .leaflet-popup-tip { background: var(--glass-raised); }
+
+.stop-card.show { transform: translate(-50%, 0); }
+
+.sc-head { align-items: center; display: flex; gap: 10px; }
+.sc-code {
+  background: color-mix(in srgb, #d64545 16%, transparent);
+  border-radius: 7px;
+  color: #d64545;
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 800;
+  padding: 3px 8px;
+}
+html[data-theme="dark"] .sc-code { color: #ef7a6d; }
+.sc-name { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; flex: 1; min-width: 0; }
+.sc-x {
+  background: var(--hover); border: 0; border-radius: 999px; color: var(--ink-2);
+  cursor: pointer; flex: none; font-size: 18px; height: 30px; line-height: 1; width: 30px;
+}
+.sc-meta { color: var(--ink-3); font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; margin: 12px 0 10px; text-transform: uppercase; }
+.sc-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.sc-chip {
+  align-items: center;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  gap: 7px;
+  padding: 9px 10px;
+}
+.sc-chip.live { background: color-mix(in srgb, var(--live) 16%, transparent); border-color: color-mix(in srgb, var(--live) 40%, transparent); }
+.sc-rt { color: var(--ink); font-size: 13.5px; font-weight: 700; }
+.sc-when { color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; margin-left: auto; }
+.sc-chip.live .sc-when { color: var(--live); font-weight: 700; }
+.sc-live { align-items: center; color: var(--ink-2); display: flex; font-size: 12.5px; gap: 8px; margin-top: 14px; }
+.sc-livetag { background: var(--live); border-radius: 5px; color: #04120a; font-size: 9.5px; font-weight: 800; letter-spacing: 0.05em; padding: 3px 7px; }
+.sc-empty { color: var(--ink-3); font-size: 13px; }
