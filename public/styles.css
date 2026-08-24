@@ -3800,17 +3800,18 @@ html[data-theme="dark"] .map-btn.discover {
 }
 
 /* All-network stop dots + tap-for-board popup. */
-.net-stop {
+/* Rail/MRT station marker: a bold blue rounded square with a white core —
+   distinct from the small round bus-stop dots. */
+.net-rail {
   display: block;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--glass-raised);
-  border: 2.5px solid var(--ink-2);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  background: #2563eb;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
-
-html[data-theme="dark"] .net-stop { border-color: #cfe0f5; background: #0d1522; }
+html[data-theme="dark"] .net-rail { background: #5aa3ff; border-color: #0d1522; }
 
 
 
