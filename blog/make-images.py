@@ -3,7 +3,7 @@
 the map around ITS bounding box (centered, padded), then draw lines, stops and
 labels. Basemap tiles © CARTO/OSM (credited in captions); geometry from the
 live tracker's own GTFS API."""
-import math, io, json, urllib.request, urllib.parse
+import math, io, json, os, urllib.request, urllib.parse
 from PIL import Image, ImageDraw, ImageFont
 
 APP = "https://public.kaynx1.com"
@@ -80,8 +80,12 @@ def build(name, lines, W=1536, H=1024, bbox=None, labels=True, pad=0.10):
     for tx in range(tx0, tx1 + 1):
         for ty in range(ty0, ty1 + 1):
             try:
+                # CARTO watermarks raster tiles without a free key; set
+                # CARTO_KEY in the env when regenerating so maps stay clean.
+                key = os.environ.get("CARTO_KEY", "")
+                suffix = f"?key={key}" if key else ""
                 tile = Image.open(io.BytesIO(http(
-                    f"https://a.basemaps.cartocdn.com/rastertiles/voyager/{zi}/{tx}/{ty}@2x.png"))).convert("RGB")
+                    f"https://a.basemaps.cartocdn.com/rastertiles/voyager/{zi}/{tx}/{ty}@2x.png{suffix}"))).convert("RGB")
                 base.paste(tile, ((tx - tx0) * 512, (ty - ty0) * 512))
             except Exception:
                 pass

@@ -25,6 +25,19 @@ type StaticCacheEntry = {
 
 const staticCache = new Map<FeedId, StaticCacheEntry>();
 
+/* One download per feed, no matter how many requests race for it. The app's
+   boot fires every category at once, so an uncached feed used to be fetched
+   and parsed once per concurrent request — same zip, same CPU, N times. */
+const inflight = new Map<FeedId, Promise<StaticGtfsFeed>>();
+
+/* A feed whose upstream is dead (Kuantan and Kangar 404 for months at a time)
+   never lands in the cache, so without this every request that touches "all
+   feeds" — /route-index above all — re-attempted the download and sat waiting
+   on the broken upstream. Remember the failure and answer from it for a few
+   minutes instead. */
+const FAILURE_COOLDOWN_MS = 5 * 60 * 1000;
+const lastFailure = new Map<FeedId, { at: number; error: Error }>();
+
 export function getStaticGtfsUrl(feedId: FeedId): string {
   return feedDefinition(feedId).staticUrl;
 }
@@ -35,6 +48,49 @@ export async function getStaticFeed(feedId: FeedId): Promise<StaticGtfsFeed> {
     return cached.feed;
   }
 
+  /* Timetables a few hours past their TTL are still timetables. Serving the
+     stale copy and refreshing behind it turns the daily expiry from a
+     multi-second stall for whoever hits it first into zero user-visible cost.
+     A feed that was never loaded still has to block — there is nothing to
+     serve yet. */
+  if (cached) {
+    if (!inflight.has(feedId)) {
+      loadStaticFeed(feedId).catch(() => {
+        /* refresh failed; the stale copy stands until the next attempt */
+      });
+    }
+    return cached.feed;
+  }
+
+  return loadStaticFeed(feedId);
+}
+
+function loadStaticFeed(feedId: FeedId): Promise<StaticGtfsFeed> {
+  const pending = inflight.get(feedId);
+  if (pending) {
+    return pending;
+  }
+
+  const failed = lastFailure.get(feedId);
+  if (failed && Date.now() - failed.at < FAILURE_COOLDOWN_MS) {
+    return Promise.reject(failed.error);
+  }
+
+  const load = fetchAndParseFeed(feedId)
+    .then((feed) => {
+      lastFailure.delete(feedId);
+      return feed;
+    })
+    .catch((error: Error) => {
+      lastFailure.set(feedId, { at: Date.now(), error });
+      throw error;
+    })
+    .finally(() => inflight.delete(feedId));
+  inflight.set(feedId, load);
+  return load;
+}
+
+async function fetchAndParseFeed(feedId: FeedId): Promise<StaticGtfsFeed> {
   // Singapore has no GTFS to download; its adapters synthesise the same shape.
   if (feedId === "sg-rail" || feedId === "sg-bus") {
     const feed = feedId === "sg-rail" ? buildSgRailFeed() : await buildSgBusFeed();
