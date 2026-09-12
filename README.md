@@ -1,17 +1,63 @@
-# Rapid Bus Maps Handler
+# Public Transport Live
 
-Small API service for Malaysia Open API GTFS data. It combines Prasarana Rapid Bus static GTFS route/stops/shapes with GTFS Realtime vehicle positions.
+A live public-transport map and journey planner for Malaysia and Singapore. The
+project combines static GTFS schedules with realtime vehicle positions, serves a
+responsive web app, and includes a Capacitor-based Android app.
 
-## Run
+## Features
+
+- Live bus and train locations where operators publish realtime data
+- Route maps, stop boards, service directions, and upcoming departures
+- Multimodal journey planning with walking and interchange legs
+- Nearby-stop discovery, stop search, crowd reports, and arrival alerts
+- Malaysia rail and bus coverage, KTMB services, and Singapore buses
+- Progressive Web App support plus an Android wrapper in [`mobile/`](mobile/)
+- Optional aircraft overlay and a protected operational dashboard
+
+## Quick start
 
 ```bash
 npm install
 npm run dev
 ```
 
-Default URL: `http://localhost:3000`
+Open `http://localhost:3000`. Development binds to `0.0.0.0` by default so the
+site can also be tested from another device on the same network.
 
-## Endpoints
+For a production-style local run:
+
+```bash
+npm run build
+npm start
+```
+
+## Configuration
+
+The core Malaysian feeds work without credentials. Optional features are
+enabled with environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `PORT` | HTTP port; defaults to `3000` |
+| `HOST` | Bind address; use `127.0.0.1` behind a reverse proxy |
+| `CORS_ORIGIN` | Allowed web origin; defaults to `*` |
+| `LTA_ACCOUNT_KEY` | Singapore LTA DataMall arrivals and vehicle data |
+| `ADMIN_PASS` | Enables the Basic Auth dashboard at `/my-admin` |
+| `VAPID_PUBLIC`, `VAPID_PRIVATE` | Enables web-push notifications |
+| `PUSH_COOLDOWN_HOURS` | Controls notification cooldown |
+
+Do not commit production credentials. Supply them through your deployment
+environment or a local ignored environment file.
+
+## Architecture
+
+- `src/` — TypeScript/Express API, GTFS parsing, routing, and realtime adapters
+- `public/` — dependency-free web interface and service worker
+- `mobile/` — Capacitor Android shell and mobile build instructions
+- `blog/` — travel-guide content and generated supporting graphics
+- `design/` — UI references and design notes
+
+## API endpoints
 
 - `GET /health`
 - `GET /api/rapid-bus/categories`
