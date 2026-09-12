@@ -157,13 +157,25 @@ function toggleSaved(routeId, category) {
 
 const THEME_KEY = "rapidbus.theme";
 
+/* CARTO now watermarks its raster tiles ("API KEY REQUIRED") unless the
+   request carries a free key. Get one in a minute at carto.com/basemaps/apikey
+   (no account needed, 5M tiles/month free) and paste it below — that's the only
+   change needed to clear the watermark. Empty = tiles still load, just stamped.
+   It's a client-side map key, safe to ship in the page like every web map key. */
+const CARTO_KEY = "cb1_2f6z_1_072bbffdecf1f74d0a9a44ee";
+
+function cartoTiles(path) {
+  const url = `https://{s}.basemaps.cartocdn.com/${path}/{z}/{x}/{y}{r}.png`;
+  return CARTO_KEY ? `${url}?key=${CARTO_KEY}` : url;
+}
+
 const BASEMAPS = {
   /* nolabels: text shares colours with water and roads, so remapping tiles
      that contain text mangles it — geometry is remapped, labels come from
      CARTO's own dark label layer drawn on top, already light-on-dark. */
-  dark: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png",
-  darkLabels: "https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png",
-  light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+  dark: cartoTiles("rastertiles/voyager_nolabels"),
+  darkLabels: cartoTiles("dark_only_labels"),
+  light: cartoTiles("light_all")
 };
 
 /* Dark map, take two. CARTO's dark tiles paint sea and major roads the
@@ -432,31 +444,65 @@ function normalizeRoute(route, category) {
   };
 }
 
-async function buildRouteIndex() {
-  const data = await getJson("/api/rapid-bus/categories");
-  const categories = data.categories || [];
-
+function applyRouteIndex(data) {
   for (const feed of data.feeds || []) {
     labels[feed.id] = feed.label;
     shortLabels[feed.id] = feed.short;
     feedInfo[feed.id] = feed;
   }
+  routeIndex = (data.categories || []).flatMap((entry) =>
+    (entry.routes || []).map((route) => normalizeRoute(route, entry.category))
+  );
+  indexReady = true;
+}
 
+async function buildRouteIndex() {
+  /* Route lists change about once a day, so yesterday's copy is a perfectly
+     good first paint. Render it the moment the app opens; the network refresh
+     replaces it quietly. Against a ~200ms-away server this is the difference
+     between routes appearing instantly and staring at skeletons for seconds. */
+  const target = apiUrl("/api/route-index");
+  if (!indexReady) {
+    const cached = await readApiCache(target);
+    if (cached?.data?.categories?.length) {
+      applyRouteIndex(cached.data);
+      searchRoutes();
+      renderSuggestions();
+      renderRecents();
+    }
+  }
+
+  try {
+    const data = await getJson("/api/route-index");
+    if (!data?.categories?.length) {
+      throw new Error("empty route index");
+    }
+    applyRouteIndex(data);
+    return;
+  } catch (error) {
+    // A cached index is already on screen — a failed refresh is not a failure.
+    if (indexReady) {
+      return;
+    }
+    console.warn("route index endpoint unavailable, falling back:", error.message);
+  }
+
+  /* Old servers (or a mid-deploy mismatch) still speak the per-category
+     protocol: categories first, then one request per feed. */
+  const data = await getJson("/api/rapid-bus/categories");
   const results = await Promise.all(
-    categories.map(async (category) => {
+    (data.categories || []).map(async (category) => {
       try {
         const payload = await getJson(`/api/rapid-bus/${category}/routes`);
-        return (payload.routes || []).map((route) => normalizeRoute(route, category));
+        return { category, routes: payload.routes || [] };
       } catch (error) {
         // Kuantan currently 404s upstream; skip dead areas instead of failing.
         console.warn(`Skipping ${category}:`, error.message);
-        return [];
+        return { category, routes: [] };
       }
     })
   );
-
-  routeIndex = results.flat();
-  indexReady = true;
+  applyRouteIndex({ feeds: data.feeds, categories: results });
 }
 
 function scoreRoute(route, query) {
@@ -4703,6 +4749,25 @@ if ("serviceWorker" in navigator) {
       .catch((error) => {
         console.warn("service worker registration failed", error);
       });
+  });
+
+  /* The shell now serves from cache instantly and refreshes behind the scenes
+     (see sw.js). When that background refresh actually brought new code, the
+     worker says so and this chip offers the reload — so a deploy is still
+     visible on the first load, it just no longer taxes every load. */
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data?.type !== "shell-updated") return;
+    if (document.getElementById("updateBubble")) return;
+    const bubble = document.createElement("div");
+    bubble.id = "updateBubble";
+    bubble.className = "update-bubble";
+    bubble.innerHTML = `
+      <span><b>App updated</b> — reload for the latest version</span>
+      <button type="button" class="update-btn">Reload</button>
+      <button type="button" class="update-x" aria-label="Later">×</button>`;
+    bubble.querySelector(".update-btn").addEventListener("click", () => window.location.reload());
+    bubble.querySelector(".update-x").addEventListener("click", () => bubble.remove());
+    document.body.appendChild(bubble);
   });
 }
 

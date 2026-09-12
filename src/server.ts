@@ -341,7 +341,19 @@ fetch("/my-admin/data").then((r)=>r.json()).then((d)=>{
    /sitemap.xml here beats the old hand-written file. */
 app.use(seoRouter);
 
-app.use(express.static(path.join(process.cwd(), "public")));
+/* Leaflet and the icons change roughly never; letting the browser hold them
+   for a week removes a handful of ~200ms revalidation round trips per load.
+   Everything else keeps the default (revalidate every time) so deploys land. */
+app.use(
+  express.static(path.join(process.cwd(), "public"), {
+    setHeaders: (res, filePath) => {
+      const rel = path.relative(path.join(process.cwd(), "public"), filePath);
+      if (rel.startsWith("vendor") || rel.startsWith("assets")) {
+        res.setHeader("Cache-Control", "public, max-age=604800");
+      }
+    }
+  })
+);
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
@@ -399,5 +411,15 @@ function primeJourneyNetwork(): void {
     })
     .catch((error) => {
       console.warn("[journey] priming failed, will build on first request:", error?.message ?? error);
+    });
+
+  /* The journey feeds are most but not all of them (Penang rides outside the
+     planner). /route-index wants every feed warm, so top up the stragglers. */
+  Promise.all([import("./gtfsStatic.js"), import("./config.js")])
+    .then(([{ getStaticFeed }, { FEED_IDS }]) =>
+      Promise.allSettled(FEED_IDS.map((id) => getStaticFeed(id)))
+    )
+    .catch(() => {
+      /* best effort; the first request loads whatever is missing */
     });
 }

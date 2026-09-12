@@ -13,7 +13,7 @@
    Nothing here invents freshness it does not have.
 */
 
-const VERSION = "rapidbus-v13";
+const VERSION = "rapidbus-v15";
 const SHELL_CACHE = `${VERSION}-shell`;
 
 const SHELL_ASSETS = [
@@ -62,36 +62,66 @@ self.addEventListener("activate", (event) => {
 
 
 
-/* The shell is served from cache for speed and offline, but ALWAYS revalidated
-   behind that. A plain cache-first shell pins users to whatever JS was cached
-   on their first visit, so a deploy never reaches them — the app would keep
-   running old code indefinitely. */
-/* The shell is fetched fresh when the network allows, falling back to cache.
+/* The shell is served from cache instantly and revalidated in the background.
 
-   It used to be cache-first with background revalidation, which is faster but
-   means a deploy does not reach anyone until their SECOND load. That repeatedly
-   left people running old CSS and old JS with no way to tell. The shell is
-   ~150 KB against a VPS tens of milliseconds away, so paying that per load is
-   worth never shipping a stale interface. Offline is unaffected — the cache
-   answers the moment the network does not.
-*/
-async function shellWithRevalidate(request) {
+   History: this was cache-first (fast, but deploys reached nobody until their
+   second load, with no way to tell), then network-first (deploys land on the
+   first load, but every open pays the full network round trip for every shell
+   file before anything renders — and the server turned out to be ~200ms away,
+   not "tens of milliseconds", so that was over a second of blank screen per
+   visit). This is the third take: cache answers immediately, the fresh copy is
+   fetched behind it, and when a background fetch brings back DIFFERENT bytes
+   the page is told so it can show a "new version — refresh" chip. Speed of
+   cache-first, visibility of network-first. */
+
+/* Core files where a change means "the app updated" — worth telling the page.
+   Fonts and marker images also flow through here but update silently. */
+const NOTIFY_PATHS = new Set(["/", "/index.html", "/app.js", "/styles.css", "/platform-overrides.js", "/native-bridge.js"]);
+
+function shellFileChanged(cached, fresh) {
+  const a = cached.headers.get("etag");
+  const b = fresh.headers.get("etag");
+  if (a && b) {
+    return a !== b;
+  }
+  const la = cached.headers.get("content-length");
+  const lb = fresh.headers.get("content-length");
+  return Boolean(la && lb && la !== lb);
+}
+
+async function notifyShellUpdated() {
+  const clients = await self.clients.matchAll({ type: "window" });
+  for (const client of clients) {
+    client.postMessage({ type: "shell-updated" });
+  }
+}
+
+async function shellStaleWhileRevalidate(request) {
   const cache = await caches.open(SHELL_CACHE);
+  const cached = await cache.match(request, { ignoreSearch: true });
 
-  try {
+  const refresh = (async () => {
     const response = await fetch(request);
     if (response.ok) {
+      const url = new URL(request.url);
+      if (cached && NOTIFY_PATHS.has(url.pathname) && shellFileChanged(cached, response)) {
+        void notifyShellUpdated();
+      }
       await cache.put(request, response.clone());
-      return response;
     }
-    // A non-OK status is still the server's real answer; prefer cache if we have it.
-    const cached = await cache.match(request, { ignoreSearch: true });
-    return cached ?? response;
+    return response;
+  })();
+
+  if (cached) {
+    refresh.catch(() => {
+      /* offline or flaky — the cached copy already answered */
+    });
+    return cached;
+  }
+
+  try {
+    return await refresh;
   } catch {
-    const cached = await cache.match(request, { ignoreSearch: true });
-    if (cached) {
-      return cached;
-    }
     throw new Error("offline and shell not cached");
   }
 }
@@ -111,7 +141,7 @@ self.addEventListener("fetch", (event) => {
 
   // Google Fonts are fine to keep once fetched.
   if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com") {
-    event.respondWith(shellWithRevalidate(request));
+    event.respondWith(shellStaleWhileRevalidate(request));
     return;
   }
 
@@ -132,7 +162,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.origin === self.location.origin) {
-    event.respondWith(shellWithRevalidate(request));
+    event.respondWith(shellStaleWhileRevalidate(request));
   }
 });
 

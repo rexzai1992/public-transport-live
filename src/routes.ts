@@ -56,6 +56,39 @@ apiRouter.get("/rapid-bus/categories", (_req, res) => {
   });
 });
 
+/* The whole route index in one response. The app used to build its index from
+   1 + N requests (categories, then every feed's route list) — against a server
+   ~200ms away that waterfall alone was over a second of load time. All of it
+   sits in memory here, so hand it over in one round trip. */
+apiRouter.get("/route-index", async (_req, res, next) => {
+  try {
+    const categories = await Promise.all(
+      FEED_IDS.map(async (id) => {
+        try {
+          const feed = await getStaticFeed(id);
+          return { category: id, loadedAt: feed.loadedAt, routes: listRoutes(feed) };
+        } catch {
+          // A dead upstream (Kuantan 404s) must not empty the whole index.
+          return null;
+        }
+      })
+    );
+
+    res.json({
+      feeds: FEED_IDS.map((id) => ({
+        id,
+        label: FEEDS[id].label,
+        short: FEEDS[id].short,
+        mode: FEEDS[id].mode,
+        live: FEEDS[id].realtimeUrl !== null
+      })),
+      categories: categories.filter((entry) => entry !== null)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 apiRouter.get("/rapid-bus/:category/routes", async (req, res, next) => {
   try {
     const { category } = categoryParamSchema.parse(req.params);
