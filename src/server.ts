@@ -7,6 +7,8 @@ import { apiRouter, adminStats, sendAdminPush, DEFAULT_JOURNEY_FEEDS } from "./r
 import { seoRouter } from "./seo.js";
 import { timingSafeEqual } from "node:crypto";
 import { UpstreamError } from "./http.js";
+import { FEEDS, FEED_IDS, type FeedId } from "./config.js";
+import { getVehiclePositions } from "./gtfsRealtime.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -131,6 +133,55 @@ app.get("/my-admin/data", (req, res) => {
   res.json(adminStats());
 });
 
+app.get("/my-admin/api-check", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.setHeader("Cache-Control", "no-store");
+
+  const checkedAt = new Date().toISOString();
+  const feeds = await Promise.all(FEED_IDS.map(async (id) => {
+    const definition = FEEDS[id];
+    if (!definition.realtimeUrl) {
+      return { id, label: definition.label, status: "not-configured", vehicles: 0, latencyMs: 0 };
+    }
+    if (id === "sg-bus") {
+      return {
+        id,
+        label: definition.label,
+        status: process.env.LTA_ACCOUNT_KEY ? "configured" : "missing-key",
+        vehicles: 0,
+        latencyMs: 0,
+        note: "Live arrivals are checked per stop and route."
+      };
+    }
+
+    const started = Date.now();
+    try {
+      const vehicles = await getVehiclePositions(id as FeedId);
+      const newestTimestamp = vehicles.reduce<string | undefined>((newest, vehicle) =>
+        vehicle.timestamp && (!newest || vehicle.timestamp > newest) ? vehicle.timestamp : newest, undefined);
+      return {
+        id,
+        label: definition.label,
+        status: vehicles.length ? "live" : "connected-empty",
+        vehicles: vehicles.length,
+        latencyMs: Date.now() - started,
+        newestTimestamp
+      };
+    } catch (error) {
+      return {
+        id,
+        label: definition.label,
+        status: "unavailable",
+        vehicles: 0,
+        latencyMs: Date.now() - started,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  }));
+
+  res.json({ checkedAt, feeds });
+});
+
 app.get("/my-admin/push", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   res.setHeader("Cache-Control", "no-store");
@@ -201,6 +252,12 @@ td:last-child{font-variant-numeric:tabular-nums;text-align:right}
 <div class="panel" id="health"></div>
 
 <div class="rangebar">
+  <h2 style="margin:0;border:0;padding:0">Live feed API check</h2>
+  <button id="apiCheck" style="background:var(--line);border:0;border-radius:8px;color:#fff;cursor:pointer;font:inherit;font-weight:600;padding:8px 14px">Check now</button>
+</div>
+<div class="panel" id="apiHealth"><span style="color:var(--ink2)">Run a check to test upstream connections.</span></div>
+
+<div class="rangebar">
   <h2 id="rangeTitle" style="margin:0;border:0;padding:0">Today</h2>
   <div class="seg" id="seg">
     <button data-n="1" class="on">Day</button>
@@ -228,6 +285,30 @@ td:last-child{font-variant-numeric:tabular-nums;text-align:right}
   <span id="pr" style="margin-left:10px;color:var(--ink2);font-size:12.5px"></span>
 </div>
 <script>
+function apiStatusLabel(status){
+  return ({live:"Live", "connected-empty":"Connected, no vehicles", unavailable:"Unavailable",
+    "not-configured":"No live feed", configured:"Configured", "missing-key":"Missing API key"})[status]||status;
+}
+async function runApiCheck(){
+  const button=document.getElementById("apiCheck"),panel=document.getElementById("apiHealth");
+  button.disabled=true; button.textContent="Checking…";
+  panel.innerHTML="<span style=color:var(--ink2)>Contacting live-feed providers…</span>";
+  try{
+    const response=await fetch("/my-admin/api-check");
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||("HTTP "+response.status));
+    const rows=data.feeds.map((feed)=>{
+      const colour=feed.status==="live"?"var(--good)":feed.status==="connected-empty"||feed.status==="configured"||feed.status==="not-configured"?"var(--warn)":"var(--bad)";
+      const detail=feed.error||feed.note||(feed.newestTimestamp?"Newest: "+new Date(feed.newestTimestamp).toLocaleString():"");
+      return "<tr><td><b>"+feed.label+"</b><br><small style=color:var(--ink2)>"+feed.id+"</small></td><td style='color:"+colour+"'>"+apiStatusLabel(feed.status)+"</td><td>"+feed.vehicles+"</td><td>"+feed.latencyMs+" ms"+(detail?"<br><small style=color:var(--ink2)>"+detail+"</small>":"")+"</td></tr>";
+    }).join("");
+    panel.innerHTML="<div style='color:var(--ink2);font-size:12px;margin-bottom:8px'>Checked "+new Date(data.checkedAt).toLocaleString()+"</div><table><tr><th>Feed</th><th>Status</th><th>Vehicles</th><th>Response</th></tr>"+rows+"</table>";
+  }catch(error){panel.innerHTML="<span style=color:var(--bad)>Check failed: "+error.message+"</span>";}
+  finally{button.disabled=false;button.textContent="Check now";}
+}
+document.getElementById("apiCheck").addEventListener("click",runApiCheck);
+runApiCheck();
+
 document.getElementById("ps").addEventListener("click",async()=>{
   const t=document.getElementById("pt").value.trim(),b=document.getElementById("pb").value.trim();
   if(!t||!b){document.getElementById("pr").textContent="title + message needed";return;}
