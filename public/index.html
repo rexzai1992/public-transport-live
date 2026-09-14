@@ -49,6 +49,22 @@
       See real-time bus positions and arrival times, plan journeys with transfers, get alerts before your stop,
       and check platform crowding on Singapore rail. Works offline once loaded. No account needed.</p>
     </noscript>
+    <div id="dataNotice" class="data-notice" role="dialog" aria-modal="true" aria-labelledby="dataNoticeTitle" hidden>
+      <div class="data-notice-card">
+        <span class="data-notice-mark" aria-hidden="true">
+          <img src="/assets/icon-192.png" alt="" width="52" height="52" />
+        </span>
+        <p class="eyebrow">Before you travel</p>
+        <h2 id="dataNoticeTitle">Know what the colours mean</h2>
+        <div class="data-notice-key">
+          <p><span class="data-notice-dot live" aria-hidden="true"></span><strong>Green is real-time</strong><br><small>Based on a vehicle or arrival currently reporting through the public API.</small></p>
+          <p><span class="data-notice-dot scheduled" aria-hidden="true"></span><strong>Gray is scheduled</strong><br><small>Based on the published timetable, not the vehicle&rsquo;s current location.</small></p>
+        </div>
+        <p class="data-notice-disclaimer">Public Transport Live is an independent community service. We are not affiliated with or endorsed by Rapid KL, Prasarana, LTA, or any transport operator. We use publicly available transport data to help people plan their journeys. Live feeds can be delayed or temporarily unavailable, so please allow extra time.</p>
+        <button id="dataNoticeAccept" class="data-notice-accept" type="button">I understand &mdash; open the map</button>
+        <a href="/terms.html" target="_blank" rel="noopener">Read data sources, terms &amp; privacy</a>
+      </div>
+    </div>
     <div id="map"></div>
 
     <main class="rail" aria-label="Route discovery and selected route">

@@ -184,7 +184,23 @@ apiRouter.get("/rapid-bus/:category/map", async (req, res, next) => {
     );
 
     const matchKeys = routeMatchKeys(route);
-    const vehicles = (await getVehiclePositions(category, feed, routeId)).filter((vehicle) =>
+    let allVehicles = [] as Awaited<ReturnType<typeof getVehiclePositions>>;
+    let liveFeedStatus: "live" | "connected-empty" | "unavailable" | "not-configured" =
+      hasRealtime(category) ? "live" : "not-configured";
+    let liveFeedMessage: string | undefined;
+    if (hasRealtime(category)) {
+      try {
+        allVehicles = await getVehiclePositions(category, feed, routeId);
+        if (!allVehicles.length) {
+          liveFeedStatus = "connected-empty";
+          liveFeedMessage = `${feedDefinition(category).label} live data is temporarily unavailable from the public API. Scheduled times are shown instead.`;
+        }
+      } catch {
+        liveFeedStatus = "unavailable";
+        liveFeedMessage = `${feedDefinition(category).label} live data could not be reached through the public API. Scheduled times are shown instead.`;
+      }
+    }
+    const vehicles = allVehicles.filter((vehicle) =>
       vehicleBelongsToRoute(vehicle.routeId, matchKeys)
     );
 
@@ -222,6 +238,8 @@ apiRouter.get("/rapid-bus/:category/map", async (req, res, next) => {
       serviceDay: clock.date,
       mode: FEEDS[category].mode,
       live: hasRealtime(category),
+      liveFeedStatus,
+      liveFeedMessage,
       shapeSource: pattern?.shapeSource ?? "none",
       direction: directionIndex,
       patterns: patterns.map((entry, index) => ({

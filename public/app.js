@@ -44,6 +44,8 @@ const state = {
   patterns: [],
   mode: "bus",
   live: true,
+  liveFeedStatus: "live",
+  liveFeedMessage: "",
   shapeSource: "feed",
   journey: {
     from: null,
@@ -71,7 +73,39 @@ const LIVE_REFRESH_IDLE_MS = 60000;      // quiet: no live vehicles right now
 const MARKER_ANIMATION_MS = 1200;
 const RECENT_KEY = "rapidbus.recentRoutes";
 const REGION_KEY = "rapidbus.region";
+const DATA_NOTICE_KEY = "rapidbus.dataNotice.v1";
 const REGION_CENTERS = { my: [3.139, 101.6869], sg: [1.3521, 103.8198] };
+
+/* First-use clarity: the app combines genuinely live positions with published
+   schedules, so explain both before a passenger treats either as a promise. */
+function initDataNotice() {
+  const notice = document.getElementById("dataNotice");
+  const accept = document.getElementById("dataNoticeAccept");
+  if (!notice || !accept) return;
+
+  let accepted = false;
+  try {
+    accepted = localStorage.getItem(DATA_NOTICE_KEY) === "1";
+  } catch {
+    /* Storage can be blocked; showing the notice again is the safe fallback. */
+  }
+  if (accepted) return;
+
+  notice.hidden = false;
+  document.body.classList.add("data-notice-open");
+  accept.focus();
+  accept.addEventListener("click", () => {
+    try {
+      localStorage.setItem(DATA_NOTICE_KEY, "1");
+    } catch {
+      /* The notice can still be dismissed for this page load. */
+    }
+    notice.hidden = true;
+    document.body.classList.remove("data-notice-open");
+  }, { once: true });
+}
+
+initDataNotice();
 
 function isSgCategory(category) {
   return String(category || "").startsWith("sg-");
@@ -812,6 +846,8 @@ async function selectRoute(routeId, category, options = {}) {
   state.direction = Number.isFinite(Number(data.direction)) ? Number(data.direction) : 0;
   state.mode = data.mode || "bus";
   state.live = data.live !== false;
+  state.liveFeedStatus = data.liveFeedStatus || (state.live ? "live" : "not-configured");
+  state.liveFeedMessage = data.liveFeedMessage || "";
   state.shapeSource = data.shapeSource || "feed";
   state.selectedStopId = null;
   applyMode();
@@ -1283,6 +1319,8 @@ async function refreshVehicles() {
   }
 
   const features = getVehicleFeatures(data);
+  state.liveFeedStatus = data.liveFeedStatus || (state.live ? "live" : "not-configured");
+  state.liveFeedMessage = data.liveFeedMessage || "";
   if (Array.isArray(data.patterns)) {
     state.patterns = data.patterns;
   }
@@ -1799,7 +1837,9 @@ function renderRouteDetails() {
 function renderFeedNotices() {
   const notices = [];
 
-  if (!state.live) {
+  if (state.liveFeedMessage) {
+    notices.push(state.liveFeedMessage);
+  } else if (!state.live) {
     notices.push(
       `Prasarana publishes no live ${vehicleNoun()} positions for this network — times below are today\u2019s timetable.`
     );
@@ -2277,6 +2317,11 @@ function renderLiveStatus() {
 
   if (!state.live) {
     setLiveText("Timetable only · no live feed", false);
+    return;
+  }
+
+  if (state.liveFeedStatus === "connected-empty" || state.liveFeedStatus === "unavailable") {
+    setLiveText("Live API unavailable · showing schedule", false);
     return;
   }
 
