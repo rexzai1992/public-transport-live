@@ -6,7 +6,8 @@
 import { Router } from "express";
 import { FEEDS, FEED_IDS, type FeedId, feedDefinition } from "./config.js";
 import { getStaticFeed, findRoutePatterns, listRoutes } from "./gtfsStatic.js";
-import { planJourney, searchStops, type Journey } from "./journey.js";
+import { planJourney, searchStops, stopConnections, type Journey, type StopConnection } from "./journey.js";
+import { DEFAULT_JOURNEY_FEEDS } from "./routes.js";
 import { buildRouteStopSchedule, malaysiaClock, formatGtfsMinutes } from "./schedule.js";
 
 export const seoRouter = Router();
@@ -72,8 +73,41 @@ const BUS_MARK = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" ar
 function topBar(current?: "routes" | "faq"): string {
   return `<header class="top"><div class="top-in">
 <a class="brand" href="/"><span class="mark">${BUS_MARK}</span><span class="bt">Public Transport Live</span></a>
-<nav aria-label="Site"><a href="/routes"${current === "routes" ? ' aria-current="page"' : ""}>Routes</a><a class="faq" href="/faq"${current === "faq" ? ' aria-current="page"' : ""}>FAQ</a><a class="go" href="/">Live map</a></nav>
+<nav aria-label="Site"><a href="/routes"${current === "routes" ? ' aria-current="page"' : ""}>Routes</a><a href="${TRAVEL_GUIDE}/">Guides</a><a class="faq" href="/faq"${current === "faq" ? ' aria-current="page"' : ""}>FAQ</a><a class="go" href="/">Live map</a></nav>
 </div></header>`;
+}
+
+/* The travel guide (blog/, on Cloudflare Pages). Route pages point at the
+   guides that explain their network; slugs match blog/posts/NN-<slug>.html. */
+const TRAVEL_GUIDE = "https://travel-guide.kaynx1.com";
+const GUIDE_TITLES: Record<string, string> = {
+  "kl-train-lines-guide": "KL train lines explained",
+  "kl-attractions-by-train": "KL sights by train",
+  "kl-fares-and-passes": "KL fares & passes",
+  "rapid-kl-bus-how-to": "Riding Rapid KL buses",
+  "ktm-komuter-guide": "KTM Komuter guide",
+  "ets-intercity-trains": "ETS & intercity trains",
+  "klia-changi-by-public-transport": "Airports by public transport",
+  "penang-by-bus": "Penang by bus",
+  "melaka-by-bus": "Melaka by bus",
+  "johor-bahru-to-singapore": "Johor Bahru \u2194 Singapore",
+  "mybas-city-buses": "City buses across Malaysia",
+  "singapore-mrt-guide": "Singapore MRT explained",
+  "singapore-attractions-by-mrt": "Singapore sights by MRT",
+  "singapore-buses-how-to": "Riding Singapore buses",
+  "singapore-fares-and-tourist-pass": "Singapore fares & Tourist Pass"
+};
+function guidesFor(feedId: FeedId): string[] {
+  if (feedId === "rapid-rail-kl") return ["kl-train-lines-guide", "kl-attractions-by-train", "kl-fares-and-passes"];
+  if (feedId === "rapid-bus-kl" || feedId === "rapid-bus-mrtfeeder") return ["rapid-kl-bus-how-to", "kl-fares-and-passes", "kl-attractions-by-train"];
+  if (feedId === "ktmb") return ["ktm-komuter-guide", "ets-intercity-trains", "johor-bahru-to-singapore"];
+  if (feedId === "rapid-bus-penang") return ["penang-by-bus"];
+  if (feedId === "mybas-melaka") return ["melaka-by-bus", "mybas-city-buses"];
+  if (feedId === "mybas-johor") return ["johor-bahru-to-singapore", "mybas-city-buses"];
+  if (feedId.startsWith("mybas-")) return ["mybas-city-buses"];
+  if (feedId === "sg-rail") return ["singapore-mrt-guide", "singapore-attractions-by-mrt", "singapore-fares-and-tourist-pass"];
+  if (feedId === "sg-bus") return ["singapore-buses-how-to", "singapore-fares-and-tourist-pass", "singapore-attractions-by-mrt"];
+  return [];
 }
 
 const CREDITS = `Timetables and live positions: Malaysia Open API (Prasarana, KTMB, APAD) and LTA DataMall.
@@ -332,6 +366,10 @@ ${countryBlock("sg", "Singapore")}
 <p class="sub">Step-by-step directions from the live journey planner.</p>
 <div class="trips">${journeys}</div>
 
+<h2>Travel guides</h2>
+<p class="sub">Fares, passes, sights by train and how each network works.</p>
+<div class="trips"><a href="${TRAVEL_GUIDE}/malaysia" data-c="my"><span>Malaysia</span><span class="arr">\u2192</span><span>KL, Penang, Melaka, Johor Bahru</span></a><a href="${TRAVEL_GUIDE}/singapore" data-c="sg"><span>Singapore</span><span class="arr">\u2192</span><span>MRT, buses, fares, sights</span></a></div>
+
 <p class="foot"><a href="/">Public Transport Live</a> · <a href="/faq">FAQ</a> · <a href="/terms.html">Terms &amp; Privacy</a><br>${CREDITS}</p>
 </main>
 <script src="/search-core.js"></script>
@@ -557,6 +595,93 @@ const ROUTES_PAGE_SCRIPT = `
 })();
 `;
 
+/* A drawn map of the route: its shape, its stops, the ends and the main
+   interchanges labelled. No tiles to load, crisp at any size, and the labels
+   are HTML laid over the SVG so they stay readable on a phone. */
+const MAP_W = 600;
+const MAP_H = 380;
+
+type MapStop = { name: string; lat: number; lon: number; interchange?: string; weight?: number };
+
+function routeMapHtml(
+  shapes: { lat: number; lon: number }[][],
+  stops: MapStop[],
+  colour: string
+): string {
+  const lines = shapes.filter((line) => line.length > 1);
+  const geometry = lines.length ? lines : [stops];
+  const points = [...geometry.flat(), ...stops];
+  if (points.length < 2) return "";
+
+  let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+  for (const p of points) {
+    minLat = Math.min(minLat, p.lat); maxLat = Math.max(maxLat, p.lat);
+    minLon = Math.min(minLon, p.lon); maxLon = Math.max(maxLon, p.lon);
+  }
+  const kx = Math.cos((((minLat + maxLat) / 2) * Math.PI) / 180);
+  const spanX = Math.max((maxLon - minLon) * kx, 1e-4);
+  const spanY = Math.max(maxLat - minLat, 1e-4);
+  const pad = 46;
+  const scale = Math.min((MAP_W - pad * 2) / spanX, (MAP_H - pad * 2) / spanY);
+  const offX = (MAP_W - spanX * scale) / 2;
+  const offY = (MAP_H - spanY * scale) / 2;
+  const project = (p: { lat: number; lon: number }) => ({
+    x: offX + (p.lon - minLon) * kx * scale,
+    y: offY + (maxLat - p.lat) * scale
+  });
+
+  const paths = geometry
+    .map((line) => {
+      let last: { x: number; y: number } | null = null;
+      const parts: string[] = [];
+      for (const point of line) {
+        const at = project(point);
+        // Thin the line: a point every couple of pixels is plenty.
+        if (last && Math.hypot(at.x - last.x, at.y - last.y) < 1.5) continue;
+        parts.push(`${parts.length ? "L" : "M"}${at.x.toFixed(1)} ${at.y.toFixed(1)}`);
+        last = at;
+      }
+      return `<path d="${parts.join("")}"/>`;
+    })
+    .join("");
+
+  const placed: { x: number; y: number }[] = [];
+  const labels: string[] = [];
+  const label = (stop: MapStop, at: { x: number; y: number }, kind: string) => {
+    if (placed.some((p) => Math.abs(p.x - at.x) < 120 && Math.abs(p.y - at.y) < 26)) return;
+    placed.push(at);
+    // Rough width in map units (~8.5 per character at 12px); open the label
+    // towards whichever side of the dot has room for it.
+    const width = (stop.name.length + (stop.interchange?.length ?? 0) * 0.8) * 8.5 + 30;
+    const roomRight = MAP_W - at.x;
+    const side = roomRight < width && at.x > roomRight ? " l" : "";
+    labels.push(`<span class="lbl ${kind}${side}" style="left:${((at.x / MAP_W) * 100).toFixed(2)}%;top:${((at.y / MAP_H) * 100).toFixed(2)}%">${esc(stop.name)}${stop.interchange ? `<i>${esc(stop.interchange)}</i>` : ""}</span>`);
+  };
+
+  const dots = stops
+    .map((stop, i) => {
+      const at = project(stop);
+      const end = i === 0 || i === stops.length - 1;
+      const cls = end ? "end" : stop.interchange ? "x" : "";
+      return `<circle class="${cls}" cx="${at.x.toFixed(1)}" cy="${at.y.toFixed(1)}" r="${end ? 6 : stop.interchange ? 5 : 3}"/>`;
+    })
+    .join("");
+
+  // Ends first, then interchanges, as long as they don't collide.
+  label(stops[0], project(stops[0]), "end");
+  label(stops[stops.length - 1], project(stops[stops.length - 1]), "end");
+  // Busiest interchanges get the space first.
+  const ranked = stops.slice(1, -1).filter((s) => s.interchange).sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));
+  for (const stop of ranked.slice(0, 8)) {
+    label(stop, project(stop), "minor");
+  }
+
+  return `<figure class="rmap" style="--lc:${colour}" aria-label="Map of the route">
+<svg viewBox="0 0 ${MAP_W} ${MAP_H}" role="img" aria-hidden="true"><g class="ln">${paths}</g><g class="st">${dots}</g></svg>
+${labels.join("")}
+</figure>`;
+}
+
 /* Parts of the day a passenger plans around, in minutes after midnight. A
    train every 90 seconds is "every 1–2 min in the morning peak", not forty
    numbers in an hour row; that table stays, folded, for whoever wants it. */
@@ -640,6 +765,52 @@ seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
     const schedule = buildRouteStopSchedule(feed, route.routeId, clock);
     const stopName = (name: string) => tidyName(name);
 
+    /* What you can change to at each stop. The planner's network for this
+       country (shared with journey planning, so usually already built); a
+       feed outside it gets a small network of its own. */
+    const networkFeeds: FeedId[] = (DEFAULT_JOURNEY_FEEDS as FeedId[]).includes(feedId) ? DEFAULT_JOURNEY_FEEDS : [feedId];
+    const allKeys = [...new Set(patterns.flatMap((pattern) => pattern.stops.map((stop) => `${feedId}:${stop.stopId}`)))];
+    let connections = new Map<string, StopConnection[]>();
+    try {
+      connections = await stopConnections(networkFeeds, allKeys, { feed: feedId, routeId: route.routeId });
+    } catch (error) {
+      console.warn("route page connections unavailable:", error instanceof Error ? error.message : error);
+    }
+    // Badge text and colour for every route that turns up as a connection.
+    const badgeOf = new Map<string, { code: string; colour: string; text: string }>();
+    for (const list of connections.values()) {
+      for (const conn of list) {
+        const id = `${conn.feed}:${conn.routeId}`;
+        if (badgeOf.has(id)) continue;
+        const other = (await getStaticFeed(conn.feed).catch(() => null))?.routes.get(conn.routeId);
+        if (!other) continue;
+        const otherRail = routeModeOf(conn.feed, other) === "rail";
+        badgeOf.set(id, {
+          code: routeDisplay(other, feedDefinition(conn.feed).label, otherRail).code,
+          colour: otherRail && other.color ? `#${other.color}` : "",
+          text: other.textColor ? `#${other.textColor}` : "#fff"
+        });
+      }
+    }
+    /* Rail interchanges by name; buses only as a count, or a long route's
+       stop list would drown in bus numbers. */
+    const railHere = (stopId: string) =>
+      (connections.get(`${feedId}:${stopId}`) ?? []).filter((conn) => conn.mode === "rail" && badgeOf.has(`${conn.feed}:${conn.routeId}`));
+    const busesHere = (stopId: string) => (connections.get(`${feedId}:${stopId}`) ?? []).filter((conn) => conn.mode === "bus").length;
+    const connectionBadges = (stopId: string) => {
+      const rail = railHere(stopId)
+        .map((conn) => {
+          const badge = badgeOf.get(`${conn.feed}:${conn.routeId}`)!;
+          const style = badge.colour ? ` style="--bc:${badge.colour};--bt:${badge.text}"` : "";
+          const walk = conn.walkMeters > 60 ? ` title="${conn.walkMeters} m walk"` : "";
+          return `<a class="xb"${style}${walk} href="/route/${conn.feed}/${encodeURIComponent(conn.routeId)}">${esc(badge.code)}</a>`;
+        })
+        .join("");
+      const buses = busesHere(stopId);
+      const bus = buses ? `<span class="xbus">${buses} bus${buses === 1 ? "" : "es"}</span>` : "";
+      return rail || bus ? `<span class="cx">${rail}${bus}</span>` : "";
+    };
+
     const directions = patterns.map((pattern, index) => {
       const stops = pattern.stops;
       const origin = stops[0];
@@ -686,7 +857,7 @@ seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
         .join("");
 
       const stopRows = stops
-        .map((stop, i) => `<li><span class="sn">${esc(stopName(stop.name))}</span>${offsets[i] !== null && i > 0 ? `<span class="so">+${offsets[i]} min</span>` : ""}</li>`)
+        .map((stop, i) => `<li><span class="sc"><span class="sn">${esc(stopName(stop.name))}${stop.accessible === true ? ` <span class="oku" title="Step-free access (OKU)">\u267F</span>` : ""}</span>${connectionBadges(stop.stopId)}</span>${offsets[i] !== null && i > 0 ? `<span class="so">+${offsets[i]} min</span>` : ""}</li>`)
         .join("");
 
       return {
@@ -711,6 +882,50 @@ seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
 </section>`
       };
     });
+
+    // One map for the route: the first direction's shape and stops.
+    const mapPattern = patterns[0];
+    /* Lines that run alongside most of this one (AGL and SPL share eleven
+       stations) are not interchanges worth a map label at every stop. */
+    const parallel = new Set<string>();
+    if (mapPattern) {
+      const seen = new Map<string, number>();
+      for (const stop of mapPattern.stops) {
+        for (const conn of railHere(stop.stopId)) {
+          const id = `${conn.feed}:${conn.routeId}`;
+          seen.set(id, (seen.get(id) ?? 0) + 1);
+        }
+      }
+      for (const [id, count] of seen) {
+        if (count >= 3 && count >= mapPattern.stops.length * 0.5) parallel.add(id);
+      }
+    }
+    const changesAt = (stopId: string) => railHere(stopId).filter((conn) => !parallel.has(`${conn.feed}:${conn.routeId}`));
+    const mapHtml = mapPattern
+      ? routeMapHtml(
+          mapPattern.shapes.map((line) => line.map((point) => ({ lat: point.lat, lon: point.lon }))),
+          mapPattern.stops.map((stop) => {
+            const rail = changesAt(stop.stopId).map((conn) => badgeOf.get(`${conn.feed}:${conn.routeId}`)!.code);
+            return {
+              // Map labels are short: no operator stop codes ("KJ461 ", "(M) ").
+              name: stopName(stop.name.replace(/^\([^)]*\)\s*/, "").replace(/^[A-Z]{1,3}\d+\s+/, "")),
+              lat: stop.lat,
+              lon: stop.lon,
+              interchange: rail.length ? rail.slice(0, 3).join(" \u00b7 ") : undefined,
+              weight: rail.length
+            };
+          }),
+          lineColor || "var(--ink)"
+        )
+      : "";
+    const interchangeCount = mapPattern ? mapPattern.stops.filter((stop) => changesAt(stop.stopId).length).length : 0;
+
+    const guides = guidesFor(feedId);
+    const guideBlock = guides.length
+      ? `<section class="guides"><h2>Travel guides</h2><div class="glist">${guides
+          .map((slug) => `<a href="${TRAVEL_GUIDE}/${slug}"><b>${esc(GUIDE_TITLES[slug] ?? slug)}</b><span>Read the guide \u2192</span></a>`)
+          .join("")}</div></section>`
+      : "";
 
     const tabs = directions.length > 1
       ? `<div class="dtabs" role="tablist">${directions.map((d, i) => `<button type="button" role="tab" data-d="${i}" aria-selected="${i === 0}">${d.tab}</button>`).join("")}</div>`
@@ -738,14 +953,21 @@ seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
       ]
     }).replace(/</g, "\\u003c")}</script>${PAGE_STYLE}${ROUTE_PAGE_STYLE}</head><body>${topBar()}<main class="wide route-page">
 <p class="crumbs"><a href="/routes">All routes</a> \u203a <a href="/routes#${feedId}">${esc(label)}</a> \u203a ${esc(code)}</p>
+<div class="rtop${mapHtml ? "" : " nomap"}">
 <header class="rhead">
   <h1><span class="badge"${badgeStyle}>${esc(code)}</span>${esc(view.ends.startsWith("\u2192") ? `${view.title} ${view.ends}` : view.title)}</h1>
   ${view.ends && !view.ends.startsWith("\u2192") ? `<p class="rends">${esc(view.ends)}</p>` : ""}
   <p class="sub">${esc(label)} \u00b7 ${def.realtimeUrl ? `<span class="live">Live positions</span>` : "Timetable only \u2014 this operator publishes no live positions"}</p>
   <a class="cta" href="${esc(appLink)}">${def.realtimeUrl ? `Track ${esc(code)} live on the map` : `Open ${esc(code)} on the map`}</a>
+  ${interchangeCount ? `<p class="xsum">${isRail
+    ? `${interchangeCount} interchange${interchangeCount === 1 ? "" : "s"} with other lines`
+    : `Connects with trains at ${interchangeCount} stop${interchangeCount === 1 ? "" : "s"}`} \u2014 marked in the stop list</p>` : ""}
 </header>
+${mapHtml}
+</div>
 ${tabs}
 ${directions.map((d) => d.html).join("") || "<p>Stop list unavailable right now.</p>"}
+${guideBlock}
 <p class="note">Times are today\u2019s published schedule from the operator\u2019s official feed. Trains and buses can run early or late${def.realtimeUrl ? " \u2014 the live map shows where they actually are" : ""}.</p>
 <p class="foot"><a href="/routes">All routes</a> · <a href="/">Public Transport Live</a> · <a href="/terms.html">Terms</a><br>${CREDITS}</p>
 </main>
@@ -816,14 +1038,41 @@ const ROUTE_PAGE_STYLE = `<style>
 .sn{font-size:14px;min-width:0}
 .so{color:var(--ink3);flex:none;font-size:12px;font-variant-numeric:tabular-nums}
 .note{color:var(--ink3);font-size:12.5px;margin-top:24px}
+.rtop{align-items:center;display:grid;gap:12px 36px;grid-template-columns:minmax(0,1fr) minmax(0,480px)}
+.rtop.nomap{grid-template-columns:1fr}
+.xsum{color:var(--ink2);font-size:13px;margin:-10px 0 18px}
+.rmap{aspect-ratio:${MAP_W}/${MAP_H};background:var(--card);border:1px solid var(--rule);border-radius:18px;margin:0;overflow:hidden;position:relative}
+.rmap svg{display:block;height:100%;width:100%}
+.rmap .ln path{fill:none;stroke:var(--lc);stroke-linecap:round;stroke-linejoin:round;stroke-width:5}
+.rmap .st circle{fill:var(--bg);stroke:var(--lc);stroke-width:2}
+.rmap .st circle.x{fill:var(--bg);stroke:var(--ink);stroke-width:2.5}
+.rmap .st circle.end{fill:var(--lc);stroke:var(--bg);stroke-width:2.5}
+.lbl{background:color-mix(in srgb,var(--raised) 88%,transparent);border-radius:6px;color:var(--ink);font-size:12px;font-weight:600;line-height:1.25;max-width:46%;overflow:hidden;padding:2px 6px;position:absolute;text-overflow:ellipsis;transform:translate(10px,-50%);white-space:nowrap}
+.lbl.l{transform:translate(calc(-100% - 10px),-50%)}
+.lbl.minor{color:var(--ink2);font-weight:500}
+.lbl i{color:var(--ink3);font-size:10.5px;font-style:normal;font-weight:600;margin-left:5px}
+.sc{display:flex;flex-direction:column;gap:3px;min-width:0}
+.cx{display:flex;flex-wrap:wrap;gap:4px}
+.xb{background:var(--bc,var(--inv));border-radius:5px;color:var(--bt,var(--invink));font-size:10.5px;font-weight:700;line-height:1;padding:3px 6px;text-decoration:none}
+.xb:hover{filter:brightness(1.1)}
+.xbus{border:1px solid var(--rule);border-radius:5px;color:var(--ink3);font-size:10.5px;font-weight:600;line-height:1;padding:2px 6px}
+.oku{color:var(--ink3);font-size:12px}
+.guides h2{font-size:17px;margin:34px 0 10px}
+.glist{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+.glist a{background:var(--card);border:1px solid var(--rule);border-radius:12px;display:flex;flex-direction:column;padding:13px 15px;text-decoration:none}
+.glist a:hover{background:var(--raised);border-color:var(--ink3)}
+.glist b{font-size:14.5px;font-weight:600}
+.glist span{color:var(--ink3);font-size:12.5px}
 @media (max-width:900px){
+  .rtop{grid-template-columns:1fr}
+  .rmap{margin-bottom:8px}
   .dir{grid-template-columns:1fr}
   .dir-stops{max-height:none;position:static}
   .rhead h1{font-size:25px}
   .next-big{font-size:32px}
   .freq th{width:46%}
 }
-@media (max-width:520px){.dtabs{display:flex}.dtabs button{flex:1 1 auto}.freq th,.freq td{padding:10px 12px}}
+@media (max-width:520px){.lbl.minor{display:none}.lbl{font-size:11px}.dtabs{display:flex}.dtabs button{flex:1 1 auto}.freq th,.freq td{padding:10px 12px}}
 </style>`;
 
 /* Live parts of a route page: the countdown to the next departure, the part
