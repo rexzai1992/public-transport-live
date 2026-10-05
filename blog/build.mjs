@@ -467,7 +467,7 @@ ${posts.filter((p) => inCountry(p, "my")).map((p) => `- [${p.title}](${SITE}/${p
 ${posts.filter((p) => inCountry(p, "sg")).map((p) => `- [${p.title}](${SITE}/${p.slug}): ${p.desc}`).join("\n")}
 
 ## The app
-- [Public Transport Live](https://public.kaynx1.com/): free live tracker, no ads, no login
+- [Public Transport Live](https://public.kaynx1.com/): free live tracker, no ads on the live map, no login
 - [All routes with timetables](https://public.kaynx1.com/routes)
 `);
 
