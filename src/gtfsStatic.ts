@@ -1,3 +1,5 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { parse } from "csv-parse/sync";
 import JSZip from "jszip";
 import { type FeedId, feedDefinition, STATIC_GTFS_TTL_MS } from "./config.js";
@@ -98,7 +100,59 @@ async function fetchAndParseFeed(feedId: FeedId): Promise<StaticGtfsFeed> {
     return feed;
   }
 
-  const zipBuffer = await fetchArrayBuffer(getStaticGtfsUrl(feedId));
+  /* data.gov.my sometimes publishes a feed with no routes in it (Kuching and
+     Kangar shrank to a ~1 KB zip in October 2026). That must never replace a
+     working timetable — not in memory, and not across a restart, which used to
+     wipe the last good copy. So: reject empty feeds, keep the last good zip on
+     disk, and fall back to it when the upstream is empty or unreachable. */
+  let feed: StaticGtfsFeed;
+  try {
+    const zipBuffer = await fetchArrayBuffer(getStaticGtfsUrl(feedId));
+    feed = await parseFeedZip(zipBuffer);
+    if (!feed.routes.size) {
+      throw new Error(`${feedId}: upstream published a feed with no routes`);
+    }
+    void saveLastGoodZip(feedId, zipBuffer);
+  } catch (error) {
+    const saved = await readLastGoodZip(feedId);
+    if (!saved) throw error;
+    feed = await parseFeedZip(saved);
+    if (!feed.routes.size) throw error;
+    console.warn(`${feedId}: using the last good copy from disk —`, error instanceof Error ? error.message : error);
+    // Try the upstream again in an hour rather than a day.
+    staticCache.set(feedId, { expiresAt: Date.now() + LAST_GOOD_RETRY_MS, feed });
+    return feed;
+  }
+
+  staticCache.set(feedId, {
+    expiresAt: Date.now() + STATIC_GTFS_TTL_MS,
+    feed
+  });
+
+  return feed;
+}
+
+const LAST_GOOD_DIR = path.join(process.cwd(), "data", "gtfs-cache");
+const LAST_GOOD_RETRY_MS = 60 * 60 * 1000;
+
+async function saveLastGoodZip(feedId: FeedId, zip: ArrayBuffer): Promise<void> {
+  try {
+    await mkdir(LAST_GOOD_DIR, { recursive: true });
+    await writeFile(path.join(LAST_GOOD_DIR, `${feedId}.zip`), Buffer.from(zip));
+  } catch (error) {
+    console.warn(`${feedId}: could not save the last good feed:`, error instanceof Error ? error.message : error);
+  }
+}
+
+async function readLastGoodZip(feedId: FeedId): Promise<Buffer | null> {
+  try {
+    return await readFile(path.join(LAST_GOOD_DIR, `${feedId}.zip`));
+  } catch {
+    return null;
+  }
+}
+
+async function parseFeedZip(zipBuffer: ArrayBuffer | Buffer): Promise<StaticGtfsFeed> {
   const zip = await JSZip.loadAsync(zipBuffer);
 
   const [routes, stops, trips, stopTimes, shapes, calendars, calendarExceptions, frequencies] =
@@ -113,7 +167,7 @@ async function fetchAndParseFeed(feedId: FeedId): Promise<StaticGtfsFeed> {
       parseGtfsFile<GtfsFrequency>(zip, "frequencies.txt", parseFrequency)
     ]);
 
-  const feed: StaticGtfsFeed = {
+  return {
     loadedAt: new Date().toISOString(),
     routes: mapBy(routes, (route) => route.routeId),
     stops: mapBy(stops, (stop) => stop.stopId),
@@ -131,13 +185,6 @@ async function fetchAndParseFeed(feedId: FeedId): Promise<StaticGtfsFeed> {
     calendarExceptions: groupBy(calendarExceptions, (exception) => exception.serviceId),
     frequenciesByTripId: groupBy(frequencies, (frequency) => frequency.tripId)
   };
-
-  staticCache.set(feedId, {
-    expiresAt: Date.now() + STATIC_GTFS_TTL_MS,
-    feed
-  });
-
-  return feed;
 }
 
 export function listRoutes(feed: StaticGtfsFeed, search?: string): GtfsRoute[] {
