@@ -1116,3 +1116,46 @@ async function liveRoutesForStop(stop: StopRef, patternIdx: number[], network: N
   }
   return live;
 }
+
+/* ------------------------------------------------------------------------- */
+/* Interchanges: what else stops here, or a short walk away. Route pages use  */
+/* it for "change here for KJL" — the same walk links the planner trusts.     */
+/* ------------------------------------------------------------------------- */
+export type StopConnection = {
+  feed: FeedId;
+  routeId: string;
+  mode: "bus" | "rail";
+  /** 0 when it serves the very same stop. */
+  walkMeters: number;
+};
+
+const CONNECTION_WALK_M = 500;
+
+export async function stopConnections(
+  feedIds: FeedId[],
+  stopKeys: string[],
+  exclude: { feed: FeedId; routeId: string }
+): Promise<Map<string, StopConnection[]>> {
+  const network = await getNetwork(feedIds);
+  const result = new Map<string, StopConnection[]>();
+  for (const key of stopKeys) {
+    const nearby = [{ key, meters: 0 }, ...(network.transfers.get(key) ?? []).filter((hop) => hop.meters <= CONNECTION_WALK_M)];
+    const found = new Map<string, StopConnection>();
+    for (const spot of nearby) {
+      for (const index of network.patternsByStop.get(spot.key) ?? []) {
+        const pattern = network.patterns[index];
+        if (pattern.feed === exclude.feed && pattern.routeId === exclude.routeId) continue;
+        const id = `${pattern.feed}:${pattern.routeId}`;
+        const known = found.get(id);
+        if (!known || spot.meters < known.walkMeters) {
+          found.set(id, { feed: pattern.feed, routeId: pattern.routeId, mode: pattern.mode, walkMeters: Math.round(spot.meters) });
+        }
+      }
+    }
+    result.set(
+      key,
+      [...found.values()].sort((a, b) => Number(a.mode === "bus") - Number(b.mode === "bus") || a.walkMeters - b.walkMeters)
+    );
+  }
+  return result;
+}
