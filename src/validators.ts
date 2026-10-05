@@ -25,8 +25,17 @@ export const mapQuerySchema = z.object({
 });
 
 export const stopSearchSchema = z.object({
-  q: z.string().trim().min(1),
-  feeds: z.string().trim().optional()
+  q: z.string().trim().min(1).max(80),
+  feeds: z.string().trim().optional(),
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lon: z.coerce.number().min(-180).max(180).optional()
+});
+
+export const placeSearchSchema = z.object({
+  q: z.string().trim().min(1).max(80),
+  region: z.enum(["my", "sg"]).default("my"),
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lon: z.coerce.number().min(-180).max(180).optional()
 });
 
 export const journeySchema = z.object({

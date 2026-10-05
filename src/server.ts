@@ -39,7 +39,7 @@ app.use((_req, res, next) => {
 /* Rate limits: generous for one human, hostile to a script. The journey
    planner burns CPU and Singapore vehicle lookups burn LTA key quota —
    those two get tighter buckets than plain cached reads. */
-const SPECIFIC_LIMITS = ["/api/journey", "/api/rapid-bus/sg-bus/vehicles", "/api/rapid-bus/sg-bus/map", "/api/flights"];
+const SPECIFIC_LIMITS = ["/api/journey", "/api/places", "/api/rapid-bus/sg-bus/vehicles", "/api/rapid-bus/sg-bus/map", "/api/flights"];
 const readLimiter = rateLimit({
   windowMs: 60_000,
   limit: 300,
@@ -56,7 +56,11 @@ const vehicleLimiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders:
    letting one tab starve the feed for everyone. Lookups are rarer still. */
 const flightTileLimiter = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false });
 const flightLookupLimiter = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: true, legacyHeaders: false });
+/* Place search forwards to Photon, a shared community geocoder; a person
+   typing makes a request per pause, so 60/min is plenty for a human. */
+const placeLimiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: true, legacyHeaders: false });
 app.use("/api/journey", journeyLimiter);
+app.use("/api/places", placeLimiter);
 app.use(["/api/rapid-bus/sg-bus/vehicles", "/api/rapid-bus/sg-bus/map"], vehicleLimiter);
 app.use(["/api/flights/route", "/api/flights/find"], flightLookupLimiter);
 app.use("/api/flights", flightTileLimiter);

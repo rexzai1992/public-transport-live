@@ -312,6 +312,17 @@ body:not(.has-route):not(.has-journey) .discover {
 }
 .brand-copy { flex: 1; min-width: 0; }
 
+/* With a journey or route open on desktop the list column is ~300px, and
+   "Transport" alone is wider than what the country switch and theme button
+   leave — the title ran underneath them. When the header itself is narrow,
+   the title steps down and the switch keeps only its flags. */
+.discover { container-type: inline-size; container-name: discover; }
+@container discover (max-width: 360px) {
+  .brand h1 { font-size: 15px; }
+  .brand .eyebrow { display: none; }
+  .brand .region-btn small { display: none; }
+}
+
 .brand-mark {
   background: var(--invert-bg);
   border-radius: var(--r-badge);
@@ -2678,7 +2689,8 @@ body.mode-rail .legend-rail {
 /* Disruption strip: pinned above everything in the sheet. */
 .alert-strip {
   position: fixed;
-  top: calc(var(--sp-3) + var(--safe-top));
+  /* Under the status pill (44px tall), centred over the map. */
+  top: calc(var(--sp-5) + var(--safe-top) + 52px);
   left: 50%;
   transform: translateX(-50%) translateY(-10px);
   display: flex;
@@ -2702,6 +2714,14 @@ body.mode-rail .legend-rail {
 .alert-strip:not(.hidden) {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+@media (max-width: 1100px) {
+  /* A full sheet is the whole screen; the advisory would sit on its edge. */
+  body.sheet-full .alert-strip { opacity: 0; pointer-events: none; }
+}
+@media (min-width: 1101px) {
+  /* The map's visible middle, right of the 648px panel. */
+  .alert-strip { left: calc((100vw + 648px + var(--sp-4)) / 2); max-width: min(calc(100vw - 720px), 420px); }
 }
 .alert-warn { flex: none; }
 .alert-text {
@@ -3949,4 +3969,45 @@ html[data-theme="dark"] .sc-code { color: #ef7a6d; }
 }
 .stop-result:hover { background: var(--hover); }
 .sr-pin { color: var(--ink-3); display: inline-flex; flex: none; }
+.sr-copy { display: flex; flex-direction: column; min-width: 0; }
 .sr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sr-meta { color: var(--ink-3); font-size: 11px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The part of a result the query matched: weight, not colour, so it sits in
+   the monochrome UI and survives both themes. */
+.route-row mark, .stop-result mark, .jp-result mark {
+  background: transparent; color: inherit; font-weight: 700;
+  text-decoration: underline; text-decoration-color: var(--ink-3);
+  text-decoration-thickness: 1px; text-underline-offset: 2px;
+}
+
+/* Arrow keys walk the results; the focused row reads as selected. */
+.route-row:focus-visible, .stop-result:focus-visible, .jp-result:focus-visible {
+  background: var(--selected); outline: none;
+}
+
+/* With stop matches above it, "no route matches" is a footnote, not a verdict. */
+.empty.compact { padding: 10px; }
+.empty.compact span { display: none; }
+
+.jp-none { border-top: 1px solid var(--rule); color: var(--ink-3); font-size: 12px; padding: 10px var(--sp-2); }
+
+/* Searched place (not a stop): a pin on the map with a way to get there. */
+.place-pin span {
+  align-items: center; background: var(--invert-bg); border: 2px solid var(--invert-ink);
+  border-radius: 50% 50% 50% 0; box-shadow: var(--shadow); color: var(--invert-ink);
+  display: flex; height: 28px; justify-content: center; transform: rotate(-45deg); width: 28px;
+}
+.place-pin svg { transform: rotate(45deg); }
+.place-pop { display: flex; flex-direction: column; gap: 3px; min-width: 180px; }
+.place-pop strong { font-size: 14px; font-weight: 600; }
+.place-pop small { color: var(--ink-3); font-size: 11.5px; line-height: 1.4; }
+.place-go {
+  background: var(--invert-bg); border: 0; border-radius: var(--r-btn); color: var(--invert-ink);
+  cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; margin-top: 8px; padding: 9px 0;
+}
+.jp-cap {
+  border-top: 1px solid var(--rule); color: var(--ink-3); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.08em; padding: 8px var(--sp-2) 2px; text-transform: uppercase;
+}
+.cap-src { font-weight: 500; letter-spacing: 0; text-transform: none; }

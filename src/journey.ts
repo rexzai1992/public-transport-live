@@ -2,6 +2,7 @@ import { type FeedId, FEEDS } from "./config.js";
 import { getStaticFeed } from "./gtfsStatic.js";
 import { gtfsTimeToMinutes, malaysiaClock, type MalaysiaClock } from "./schedule.js";
 import type { StaticGtfsFeed } from "./types.js";
+import { makeDoc, normalizeWords, scoreDoc, type SearchDoc } from "./search.js";
 
 /* ---------------------------------------------------------------------------
    A journey planner over the GTFS feeds.
@@ -450,12 +451,16 @@ export async function planJourney(request: PlanRequest): Promise<{
 
   let current = new Map<string, Label>();
   for (const origin of origins) {
-    const time = departAfter + origin.minutes;
-    current.set(origin.stop.key, {
-      time,
+    const label: Label = {
+      time: departAfter + origin.minutes,
       via: { kind: "walk", fromKey: "__origin__", meters: origin.meters, minutes: origin.minutes }
-    });
-    best.set(origin.stop.key, { time });
+    };
+    current.set(origin.stop.key, label);
+    /* best needs the same label, via and all: reconstruct() walks back through
+       best, and a bare { time } there dropped the opening walk from every
+       itinerary — "0 m walking", and a departure time that was really the
+       moment of boarding. */
+    best.set(origin.stop.key, label);
   }
   rounds.push(current);
 
@@ -968,40 +973,59 @@ export async function stopBoard(
   return { stop, routes };
 }
 
-/** Free-text stop lookup, for choosing a destination by name. */
+/* Each stop's search words, built once per network rather than per keystroke. */
+const stopDocs = new WeakMap<Network, Map<string, SearchDoc>>();
+
+function stopDocsFor(network: Network): Map<string, SearchDoc> {
+  let docs = stopDocs.get(network);
+  if (!docs) {
+    docs = new Map();
+    for (const stop of network.stops.values()) {
+      if (network.patternsByStop.has(stop.key)) {
+        docs.set(stop.key, makeDoc(stop.name));
+      }
+    }
+    stopDocs.set(network, docs);
+  }
+  return docs;
+}
+
+/** Free-text stop lookup, for choosing a destination by name. Word order,
+    signage abbreviations and small typos are forgiven (see search.ts); `near`
+    breaks ties toward where the passenger is looking, so of two stops called
+    "Jalan Ampang" the one on screen is the one offered. */
 export async function searchStops(
   query: string,
   feeds: FeedId[],
-  limit = 8
+  limit = 8,
+  near?: { lat: number; lon: number }
 ): Promise<StopRef[]> {
   const network = await getNetwork(feeds);
-  const needle = normalizeName(query);
-  if (!needle) {
+  const queryWords = normalizeWords(query);
+  if (!queryWords.length) {
     return [];
   }
 
-  const scored: { stop: StopRef; score: number }[] = [];
-  for (const stop of network.stops.values()) {
-    if (!network.patternsByStop.has(stop.key)) {
-      continue;
-    }
-    const name = normalizeName(stop.name);
-    let score = -1;
-    if (name === needle) score = 0;
-    else if (name.startsWith(needle)) score = 1;
-    else if (name.includes(needle)) score = 2;
-    if (score >= 0) {
-      scored.push({ stop, score });
+  const scored: { stop: StopRef; score: number; meters: number }[] = [];
+  for (const [key, doc] of stopDocsFor(network)) {
+    const score = scoreDoc(queryWords, doc);
+    if (score > 0) {
+      const stop = network.stops.get(key)!;
+      const meters = near ? haversineMeters(near.lat, near.lon, stop.lat, stop.lon) : 0;
+      scored.push({ stop, score, meters });
     }
   }
 
   /* A search for "Pasar Seni" means the station, not one of eight bus platforms
      that share the name, so rail outranks bus and a plainer name outranks a
-     decorated one ("PASAR SENI" over "KL2212 PASAR SENI (PLATFORM D1 - D6)"). */
+     decorated one ("PASAR SENI" over "KL2212 PASAR SENI (PLATFORM D1 - D6)").
+     Scores are bucketed so that rail-over-bus still decides between names that
+     match about equally well. */
   scored.sort(
     (a, b) =>
-      a.score - b.score ||
+      Math.round(b.score / 3) - Math.round(a.score / 3) ||
       Number(FEEDS[a.stop.feed].mode === "bus") - Number(FEEDS[b.stop.feed].mode === "bus") ||
+      a.meters - b.meters ||
       a.stop.name.length - b.stop.name.length ||
       a.stop.name.localeCompare(b.stop.name)
   );

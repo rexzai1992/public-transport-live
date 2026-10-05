@@ -14,6 +14,7 @@ import {
   vehicleBelongsToRoute
 } from "./gtfsStatic.js";
 import { buildRouteStopSchedule, malaysiaClock, withNextDepartures } from "./schedule.js";
+import { searchPlaces } from "./places.js";
 import { planJourney, searchStops, nearbyDepartures, stopBoard, stopsInBounds } from "./journey.js";
 import { getSgStopArrivals } from "./sg/vehicles.js";
 import { getTrainAlerts, getPlatformCrowd } from "./sg/datamall.js";
@@ -27,6 +28,7 @@ import {
   categoryParamSchema,
   journeySchema,
   stopSearchSchema,
+  placeSearchSchema,
   mapQuerySchema,
   routeParamSchema,
   routeSearchSchema,
@@ -300,10 +302,31 @@ function parseFeeds(raw?: string): FeedId[] {
   return wanted.length ? wanted : DEFAULT_JOURNEY_FEEDS;
 }
 
+/* Named places that are not stops (malls, offices, streets), from
+   OpenStreetMap. Upstream trouble is not an error for the user: the stop
+   results still stand, so an empty list is the honest answer. */
+apiRouter.get("/places/search", async (req, res, next) => {
+  try {
+    const { q, region, lat, lon } = placeSearchSchema.parse(req.query);
+    const near = lat !== undefined && lon !== undefined ? { lat, lon } : undefined;
+    let places: Awaited<ReturnType<typeof searchPlaces>> = [];
+    try {
+      places = await searchPlaces(q, region, near);
+    } catch (error) {
+      console.warn("place search failed:", error instanceof Error ? error.message : error);
+    }
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.json({ query: q, places });
+  } catch (error) {
+    next(error);
+  }
+});
+
 apiRouter.get("/stops/search", async (req, res, next) => {
   try {
-    const { q, feeds } = stopSearchSchema.parse(req.query);
-    res.json({ query: q, stops: await searchStops(q, parseFeeds(feeds)) });
+    const { q, feeds, lat, lon } = stopSearchSchema.parse(req.query);
+    const near = lat !== undefined && lon !== undefined ? { lat, lon } : undefined;
+    res.json({ query: q, stops: await searchStops(q, parseFeeds(feeds), 8, near) });
   } catch (error) {
     next(error);
   }
