@@ -13,13 +13,14 @@
    Nothing here invents freshness it does not have.
 */
 
-const VERSION = "rapidbus-v15";
+const VERSION = "rapidbus-v16";
 const SHELL_CACHE = `${VERSION}-shell`;
 
 const SHELL_ASSETS = [
   "/",
   "/index.html",
   "/app.js",
+  "/search-core.js",
   "/styles.css",
   "/native-bridge.js",
   "/platform-overrides.js",
@@ -76,7 +77,7 @@ self.addEventListener("activate", (event) => {
 
 /* Core files where a change means "the app updated" — worth telling the page.
    Fonts and marker images also flow through here but update silently. */
-const NOTIFY_PATHS = new Set(["/", "/index.html", "/app.js", "/styles.css", "/platform-overrides.js", "/native-bridge.js"]);
+const NOTIFY_PATHS = new Set(["/", "/index.html", "/app.js", "/search-core.js", "/styles.css", "/platform-overrides.js", "/native-bridge.js"]);
 
 function shellFileChanged(cached, fresh) {
   const a = cached.headers.get("etag");

@@ -67,12 +67,15 @@
     </div>
     <div id="map"></div>
 
+    <!-- Outside .rail on purpose: the panel's backdrop-filter makes it the
+         containing block for position:fixed, which pinned the advisory over
+         the app title instead of over the map. -->
+    <div id="alertStrip" class="alert-strip hidden" role="status"></div>
     <main class="rail" aria-label="Route discovery and selected route">
       <button id="sheetHandle" class="sheet-handle" type="button"
               aria-label="Resize panel" aria-expanded="false">
         <span class="sheet-grip" aria-hidden="true"></span>
       </button>
-      <div id="alertStrip" class="alert-strip hidden" role="status"></div>
       <section class="discover" aria-label="Find a route">
         <header class="brand">
           <span class="brand-mark" aria-hidden="true">
@@ -205,7 +208,7 @@
           <div class="jp-field">
             <span class="cap">To</span>
             <div class="jp-row">
-              <input id="jpTo" type="text" placeholder="Search a station or stop" aria-label="Journey destination" autocomplete="off" />
+              <input id="jpTo" type="text" placeholder="Search a place, station or stop" aria-label="Journey destination" autocomplete="off" />
             </div>
             <div id="jpToResults" class="jp-results"></div>
           </div>
@@ -318,6 +321,7 @@
     <script src="/platform-overrides.js"></script>
     <script src="/native-bridge.js"></script>
     <script src="/vendor/leaflet.js"></script>
+    <script src="/search-core.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

@@ -339,22 +339,56 @@ function sheetCoveredHeight() {
   return covered > 0 && covered < window.innerHeight ? covered : 0;
 }
 
+/* How much of the map the chrome hides: the side panel on desktop, the
+   bottom sheet and the status pill on a phone. Fitting to the whole map put
+   journeys under the 648px desktop panel, half of them out of sight. */
+function mapCover() {
+  const rail = document.querySelector(".rail")?.getBoundingClientRect();
+  const pill = document.querySelector(".status-bar")?.getBoundingClientRect();
+  const desktop = window.matchMedia("(min-width: 1101px)").matches;
+  const left = desktop && rail ? Math.max(0, Math.min(rail.right, window.innerWidth * 0.7)) : 0;
+  const top = !desktop && pill ? Math.max(0, pill.bottom) : 0;
+  /* The open legend card sits bottom-right on desktop; a journey fitted
+     under it lost its start point. */
+  const bottom = sheetCoveredHeight();
+  const key = desktop && !legend.classList.contains("collapsed") ? legend.getBoundingClientRect() : null;
+  const legendBox = key && key.width && key.left > left + 200
+    ? { right: window.innerWidth - key.left + 16, bottom: window.innerHeight - key.top + 16 }
+    : null;
+  return { left, top, right: 64, bottom, legendBox };
+}
+
 function flyToVisible(latlng, zoom, options) {
-  const covered = sheetCoveredHeight();
-  if (!covered) {
+  const { left, top, bottom } = mapCover();
+  if (!left && !top && !bottom) {
     map.flyTo(latlng, zoom, options);
     return;
   }
-  // Shift the centre down by half the covered height, so the point itself
-  // rises to the middle of the visible strip.
+  // Move the centre so the point lands in the middle of the strip left
+  // visible between the panel, the sheet and the status pill.
   const target = map.project(latlng, zoom);
-  target.y += covered / 2;
+  target.x -= left / 2;
+  target.y += (bottom - top) / 2;
   map.flyTo(map.unproject(target, zoom), zoom, options);
 }
 
 function fitBoundsVisible(bounds, options = {}) {
-  const covered = sheetCoveredHeight();
-  map.fitBounds(bounds, covered ? { ...options, paddingBottomRight: L.point(0, covered) } : options);
+  // Measured a frame later: the caller has usually just changed the panel.
+  requestAnimationFrame(() => {
+    const { left, top, right, bottom, legendBox } = mapCover();
+    const topLeft = L.point(left + 24, top + 16);
+    // The zoom/locate buttons sit on the right edge.
+    let bottomRight = L.point(right, bottom + 16);
+    if (legendBox) {
+      /* Keep clear of the open legend card, from the side or from below —
+         whichever lets this particular shape be drawn larger. */
+      const beside = L.point(legendBox.right, bottom + 16);
+      const below = L.point(right, Math.max(bottom, legendBox.bottom));
+      const zoomWith = (pad) => map.getBoundsZoom(bounds, false, topLeft.add(pad));
+      bottomRight = zoomWith(below) > zoomWith(beside) ? below : beside;
+    }
+    map.fitBounds(bounds, { ...options, paddingTopLeft: topLeft, paddingBottomRight: bottomRight });
+  });
 }
 
 let baseLayer = makeBaseLayer(theme).addTo(map);
@@ -470,11 +504,16 @@ function normalizeRoute(route, category) {
     longName,
     description: String(route.description || "").trim(),
     color: route.color || null,
-    /* The feed label is in the haystack so a network can be found by name —
+    codeKey: compactKey(shortName),
+    idKey: compactKey(route.routeId),
+    /* The feed label is searchable so a network can be found by name —
        "mybas", "melaka", "penang" — not only by a route number you would have
        to know already. "mybus" is included because three of these concessions
        brand themselves that way and passengers say it. */
-    haystack: `${shortName} ${longName} ${route.description || ""} ${route.routeId} ${labels[category] || ""} ${category}${category.startsWith("mybas-") ? " mybus bas.my" : ""}`.toLowerCase()
+    doc: makeSearchDoc(
+      `${shortName} ${longName} ${route.description || ""} ${route.routeId} ${labels[category] || ""} ${category}${category.startsWith("mybas-") ? " mybus bas.my" : ""}`,
+      `${longName} ${route.description || ""}`
+    )
   };
 }
 
@@ -539,14 +578,20 @@ async function buildRouteIndex() {
   applyRouteIndex({ feeds: data.feeds, categories: results });
 }
 
-function scoreRoute(route, query) {
-  const short = route.shortName.toLowerCase();
-  if (short === query) return 0;
-  if (short.startsWith(query)) return 1;
-  if (short.includes(query)) return 2;
-  if (route.longName.toLowerCase().startsWith(query)) return 3;
-  if (route.haystack.includes(query)) return 4;
-  return -1;
+/* The matcher itself (searchWords, makeSearchDoc, scoreDoc, highlightMatches
+   …) lives in search-core.js, shared with the server-rendered /routes page. */
+
+/* Route numbers rank above everything ("250" is a bus, not a word), then names.
+   Returns 0 for no match. */
+function scoreRoute(route, queryWords, compactQuery) {
+  if (compactQuery) {
+    if (route.codeKey === compactQuery) return 1000;
+    if (route.codeKey.startsWith(compactQuery)) return 800 - route.codeKey.length;
+    if (route.idKey === compactQuery) return 700;
+    // "117" finds T117; only for numbers, or "an" would find every code.
+    if (/\d/.test(compactQuery) && route.codeKey.includes(compactQuery)) return 600 - route.codeKey.length;
+  }
+  return scoreDoc(queryWords, route.doc);
 }
 
 function searchRoutes() {
@@ -573,23 +618,27 @@ function searchRoutes() {
     ? regional
     : regional.filter((route) => routeMode(route) === state.modeFilter);
 
+  const queryWords = searchWords(query);
   let matches;
+  let codeHit = false;
   if (!query) {
     matches = pool.slice(0, 40);
     routeCount.textContent = `${pool.length}`;
   } else {
-    matches = pool
-      .map((route) => ({ route, score: scoreRoute(route, query) }))
-      .filter((entry) => entry.score >= 0)
-      .sort((a, b) => a.score - b.score || a.route.shortName.localeCompare(b.route.shortName, undefined, { numeric: true }))
-      .slice(0, 60)
-      .map((entry) => entry.route);
-    routeCount.textContent = `${matches.length}`;
+    const compactQuery = compactKey(query);
+    const scored = pool
+      .map((route) => ({ route, score: scoreRoute(route, queryWords, compactQuery) }))
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score || a.route.shortName.localeCompare(b.route.shortName, undefined, { numeric: true }));
+    codeHit = scored.length > 0 && scored[0].score >= 600;
+    matches = scored.slice(0, 60).map((entry) => entry.route);
+    routeCount.textContent = `${scored.length}`;
   }
 
-  renderRouteResults(matches, query);
+  renderRouteResults(matches, query, queryWords);
   maybeOfferFlightSearch(query);
-  maybeSearchStops(query, token);
+  maybeSearchStops(query, token, codeHit);
+  maybeSearchPlaces(query, token, codeHit);
   if (offline) {
     setStatus("Offline", "idle");
   } else if (state.activeRouteId) {
@@ -650,22 +699,84 @@ function maybeOfferFlightSearch(query) {
   routeList.prepend(row);
 }
 
+/* Stop lookups go straight to the network: one request per pause in typing
+   is too many to keep in the offline API cache, and a failed lookup is not a
+   reason to tell the whole app it is offline. An in-memory memo makes
+   backspacing instant, and a newer keystroke aborts the older request. */
+const stopSearchMemo = new Map();
+const stopSearchAborts = new Map();
+
+async function fetchStopSearch(query, channel = "main") {
+  const center = typeof map !== "undefined" ? map.getCenter() : null;
+  // Rounded so a nudge of the map doesn't defeat the memo.
+  const near = center ? `&lat=${center.lat.toFixed(2)}&lon=${center.lng.toFixed(2)}` : "";
+  const url = `/api/stops/search?q=${encodeURIComponent(query)}${near}`;
+  if (stopSearchMemo.has(url)) return stopSearchMemo.get(url);
+
+  stopSearchAborts.get(channel)?.abort();
+  const controller = new AbortController();
+  stopSearchAborts.set(channel, controller);
+  const response = await fetch(apiUrl(url), { signal: controller.signal });
+  if (!response.ok) throw new Error(`stop search ${response.status}`);
+  const stops = ((await response.json()).stops || []).filter((stop) => inRegion(String(stop.key).split(":")[0]));
+  if (stopSearchMemo.size > 80) stopSearchMemo.delete(stopSearchMemo.keys().next().value);
+  stopSearchMemo.set(url, stops);
+  return stops;
+}
+
+/* Title case for a result row, but the leading stop code stays as signed:
+   "KL2212 Pasar Seni", not "Kl2212 Pasar Seni". */
+function stopResultName(name) {
+  return titleCase(stopDisplayName(name)).replace(/^[A-Za-z]{1,3}\d+\b/, (code) => code.toUpperCase());
+}
+
+/* Places that are not stops — malls, offices, streets — from OpenStreetMap via
+   the server. Same memo and abort pattern as stops, on their own channels. */
+const placeSearchMemo = new Map();
+
+async function fetchPlaceSearch(query, channel = "main") {
+  const trimmed = query.trim();
+  if (trimmed.length < 3) return [];
+  const center = typeof map !== "undefined" ? map.getCenter() : null;
+  const near = center ? `&lat=${center.lat.toFixed(1)}&lon=${center.lng.toFixed(1)}` : "";
+  const url = `/api/places/search?q=${encodeURIComponent(trimmed)}&region=${state.region === "sg" ? "sg" : "my"}${near}`;
+  if (placeSearchMemo.has(url)) return placeSearchMemo.get(url);
+
+  const abortKey = `place:${channel}`;
+  stopSearchAborts.get(abortKey)?.abort();
+  const controller = new AbortController();
+  stopSearchAborts.set(abortKey, controller);
+  const response = await fetch(apiUrl(url), { signal: controller.signal });
+  if (!response.ok) throw new Error(`place search ${response.status}`);
+  const places = (await response.json()).places || [];
+  if (placeSearchMemo.size > 80) placeSearchMemo.delete(placeSearchMemo.keys().next().value);
+  placeSearchMemo.set(url, places);
+  return places;
+}
+
+const PLACE_PIN_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.2" fill="currentColor"/></svg>`;
+
+/* A destination is a stop ({ key }) or a place ({ lat, lon, place: true }). */
+function destinationId(to) {
+  return to?.key || (to ? `@${Number(to.lat).toFixed(5)},${Number(to.lon).toFixed(5)}` : "");
+}
+
+/* Which network a stop belongs to, in the words on the signs. */
+function stopNetworkLabel(stop) {
+  const feed = stop.feed || String(stop.key || "").split(":")[0];
+  return labels[feed] || feed;
+}
+
 /* The search box finds stops as well as routes. Matching stops appear as a
    section above the routes; tapping one opens its station board and flies
-   the map there — the "search for a stop" path alongside tapping the map. */
-async function maybeSearchStops(query, token) {
-  const q = query.trim();
-  document.getElementById("stopSearchBlock")?.remove();
-  if (q.length < 2) return;
-  let stops;
-  try {
-    const data = await getJson(`/api/stops/search?q=${encodeURIComponent(q)}`);
-    stops = (data.stops || []).filter((st) => inRegion(String(st.key).split(":")[0])).slice(0, 6);
-  } catch {
-    return;
-  }
-  if (token !== searchToken || !stops.length) return;
+   the map there — the "search for a stop" path alongside tapping the map.
+   A query that is a route number ("250", "T117") is after the route, so then
+   the stops wait underneath instead of pushing it down. */
+let lastStopResults = [];
 
+function renderStopBlock(stops, queryWords, below) {
+  document.getElementById("stopSearchBlock")?.remove();
+  if (!stops.length) return;
   const block = document.createElement("div");
   block.id = "stopSearchBlock";
   block.className = "stop-results";
@@ -675,24 +786,175 @@ async function maybeSearchStops(query, token) {
     row.type = "button";
     row.className = "stop-result";
     row.innerHTML = `<span class="sr-pin"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="6.5" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg></span>
-      <span class="sr-name">${escapeHtml(titleCase(stopDisplayName(st.name)))}</span>`;
+      <span class="sr-copy"><span class="sr-name">${highlightMatches(stopResultName(st.name), queryWords)}</span>
+      <small class="sr-meta">${escapeHtml(stopNetworkLabel(st))}</small></span>`;
     row.addEventListener("click", () => {
       flyToVisible([st.lat, st.lon], Math.max(map.getZoom(), 16), { duration: 0.6 });
       openStopBoard({ key: st.key, stopId: st.stopId, name: st.name, lat: st.lat, lon: st.lon });
     });
     block.appendChild(row);
   }
-  routeList.prepend(block);
+  const empty = routeList.querySelector(".empty");
+  if (empty) {
+    // The stops are the answer; the "no route" note shrinks to a footnote.
+    empty.classList.add("compact");
+    routeList.prepend(block);
+  } else if (below) {
+    routeList.appendChild(block);
+  } else {
+    routeList.prepend(block);
+  }
 }
 
-function renderRouteResults(matches, query) {
+let placeMarker = null;
+
+/* A searched place gets a pin and a one-tap way to get there. */
+function showPlace(place) {
+  const latlng = [place.lat, place.lon];
+  placeMarker?.remove();
+  placeMarker = L.marker(latlng, {
+    icon: L.divIcon({ className: "place-pin", html: `<span>${PLACE_PIN_SVG}</span>`, iconSize: [30, 30], iconAnchor: [15, 28] })
+  }).addTo(map);
+  const box = document.createElement("div");
+  box.className = "place-pop";
+  box.innerHTML = `<strong>${escapeHtml(place.name)}</strong>
+    ${place.detail ? `<small>${escapeHtml(place.detail)}</small>` : ""}
+    <button type="button" class="place-go">Directions here</button>`;
+  box.querySelector(".place-go").addEventListener("click", () => {
+    placeMarker?.closePopup();
+    planTripTo({ lat: place.lat, lon: place.lon, name: place.name, place: true });
+  });
+  placeMarker.bindPopup(box, { ...STOP_POPUP_OPTS, offset: [0, -24] });
+
+  /* On a phone the search had the sheet at full height, right over the pin.
+     Drop it out of the way first, then frame the place in what is left. */
+  let settle = 0;
+  if (window.innerWidth <= 1100 && sheetState !== "min") {
+    routeSearch.blur();
+    sheetAutoFull = false;
+    applySheetState("min");
+    settle = 320;
+  }
+  window.setTimeout(() => {
+    flyToVisible(latlng, Math.max(map.getZoom(), 16), { duration: 0.6 });
+    window.setTimeout(() => placeMarker?.openPopup(), 650);
+  }, settle);
+}
+
+/* Open the planner with a destination already chosen; start from here when
+   the device will say where here is, otherwise ask for a starting point. */
+function planTripTo(destination) {
+  setView("journey");
+  setPlannerCollapsed(false);
+  state.journey.to = destination;
+  jpTo.value = destination.place ? destination.name : stopResultName(destination.name);
+  jpToResults.innerHTML = "";
+  updatePlanButton();
+  if (state.journey.from) {
+    runJourneyPlan();
+  } else if (navigator.geolocation) {
+    useMyLocationForJourney(() => runJourneyPlan());
+  } else {
+    jpFrom.focus();
+  }
+}
+
+function renderPlaceBlock(places, queryWords, below) {
+  document.getElementById("placeSearchBlock")?.remove();
+  if (!places.length) return;
+  const block = document.createElement("div");
+  block.id = "placeSearchBlock";
+  block.className = "stop-results";
+  block.innerHTML = `<div class="stop-results-cap">Places <span class="cap-src">· OpenStreetMap</span></div>`;
+  for (const place of places) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "stop-result";
+    row.innerHTML = `<span class="sr-pin">${PLACE_PIN_SVG}</span>
+      <span class="sr-copy"><span class="sr-name">${highlightMatches(place.name, queryWords)}</span>
+      ${place.detail ? `<small class="sr-meta">${escapeHtml(place.detail)}</small>` : ""}</span>`;
+    row.addEventListener("click", () => showPlace(place));
+    block.appendChild(row);
+  }
+  const stops = document.getElementById("stopSearchBlock");
+  if (stops) {
+    stops.after(block);
+  } else if (below || routeList.querySelector(".empty") === null) {
+    // Routes matched: they lead, places follow. No routes: places lead.
+    routeList.appendChild(block);
+  } else {
+    routeList.querySelector(".empty").classList.add("compact");
+    routeList.prepend(block);
+  }
+}
+
+let lastPlaceResults = [];
+
+async function maybeSearchPlaces(query, token, codeHit) {
+  const q = query.trim();
+  // A route number is not a place; don't spend a geocoder call on "250".
+  if (q.length < 3 || codeHit || /^[a-z]{0,3}\d+[a-z]?$/i.test(q)) {
+    lastPlaceResults = [];
+    document.getElementById("placeSearchBlock")?.remove();
+    return;
+  }
+  // As with stops: what still fits stays up while the new answer loads.
+  const queryWords = searchWords(q);
+  renderPlaceBlock(lastPlaceResults.filter((place) => scoreDoc(queryWords, makeSearchDoc(place.name)) > 0), queryWords, codeHit);
+  let places;
+  try {
+    places = await fetchPlaceSearch(q);
+  } catch {
+    return;
+  }
+  if (token !== searchToken) return;
+  lastPlaceResults = places;
+  renderPlaceBlock(places, queryWords, codeHit);
+}
+
+async function maybeSearchStops(query, token, codeHit = false) {
+  const q = query.trim();
+  const queryWords = searchWords(q);
+  if (q.length < 2) {
+    lastStopResults = [];
+    document.getElementById("stopSearchBlock")?.remove();
+    return;
+  }
+  const limit = codeHit ? 3 : 6;
+
+  /* Typing one more letter rarely changes which stops match, so the stops from
+     the last answer that still fit stay on screen while the new answer loads —
+     no flash of the list jumping up and back down on every keystroke. */
+  const carried = lastStopResults.filter((st) => scoreDoc(queryWords, makeSearchDoc(st.name)) > 0);
+  renderStopBlock(carried.slice(0, limit), queryWords, codeHit);
+
+  let stops;
+  try {
+    stops = await fetchStopSearch(q);
+  } catch {
+    return;
+  }
+  if (token !== searchToken) return;
+  lastStopResults = stops;
+  // Keep any place block where it is: re-rendering stops must not reorder it.
+  const placeBlock = document.getElementById("placeSearchBlock");
+  placeBlock?.remove();
+  renderStopBlock(stops.slice(0, limit), queryWords, codeHit);
+  if (placeBlock) {
+    const stopBlock = document.getElementById("stopSearchBlock");
+    if (stopBlock) stopBlock.after(placeBlock);
+    else routeList.prepend(placeBlock);
+  }
+}
+
+function renderRouteResults(matches, query, queryWords = []) {
   routeList.innerHTML = "";
 
   if (!matches.length) {
     routeList.innerHTML = `
       <div class="empty">
         <strong>No route matches &ldquo;${escapeHtml(query)}&rdquo;</strong>
-        Try a number like 250 or T117, or a place such as Wangsa Maju.
+        <span>Try a number like 250 or T117, or a place such as Wangsa Maju.</span>
       </div>
     `;
     return;
@@ -709,8 +971,8 @@ function renderRouteResults(matches, query) {
     button.innerHTML = `
       <span class="badge">${escapeHtml(badgeLabel(route.shortName))}</span>
       <span class="route-copy">
-        <span class="route-origin clip">${advisory ? `<span class="warn-dot" title="Service advisory">\u26a0</span> ` : ""}${escapeHtml(parts.primary)}</span>
-        ${parts.secondary ? `<span class="route-dest clip">${escapeHtml(parts.secondary)}</span>` : ""}
+        <span class="route-origin clip">${advisory ? `<span class="warn-dot" title="Service advisory">\u26a0</span> ` : ""}${highlightMatches(parts.primary, queryWords)}</span>
+        ${parts.secondary ? `<span class="route-dest clip">${highlightMatches(parts.secondary, queryWords)}</span>` : ""}
         <span class="route-meta clip">${escapeHtml(labels[route.category] || route.category)} · ${escapeHtml(route.routeId)}</span>
       </span>
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -2821,7 +3083,7 @@ async function openStopBoard(stop) {
     stopCardEl.querySelector("[data-plan]").addEventListener("click", () => {
       hideStopCard();
       state.journey.from = { lat: stop.lat, lon: stop.lon, name: stop.name };
-      jpFrom.value = titleCase(stop.name);
+      jpFrom.value = stopResultName(stop.name);
       setView("journey");
       updatePlanButton();
       jpTo?.focus();
@@ -3194,8 +3456,41 @@ function escapeHtml(value) {
 routeSearch.addEventListener("input", () => {
   searchHint.classList.toggle("hidden", routeSearch.value.length > 0);
   window.clearTimeout(searchDebounce);
-  searchDebounce = window.setTimeout(searchRoutes, 120);
+  searchDebounce = window.setTimeout(() => {
+    searchDebounce = null;
+    searchRoutes();
+  }, 120);
 });
+
+/* Results are reachable from the keyboard: ↓ steps from a field into its list,
+   ↑/↓ walk the list, ↑ off the top or Esc goes back to the field. */
+function wireResultKeys(input, list, selector) {
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowDown") return;
+    const first = list.querySelector(selector);
+    if (first) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+  list.addEventListener("keydown", (event) => {
+    const items = [...list.querySelectorAll(selector)];
+    const at = items.indexOf(document.activeElement);
+    if (at < 0) return;
+    if (event.key === "ArrowDown" && at < items.length - 1) {
+      event.preventDefault();
+      items[at + 1].focus();
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      (at > 0 ? items[at - 1] : input).focus();
+    } else if (event.key === "Escape") {
+      input.focus();
+    }
+  });
+}
+
+const SEARCH_RESULT_ITEMS = ".flight-find, .stop-result, .route-row";
+wireResultKeys(routeSearch, routeList, SEARCH_RESULT_ITEMS);
 
 routeSearch.addEventListener("focus", () => sheetFollowSearch(true));
 
@@ -3206,9 +3501,15 @@ routeSearch.addEventListener("blur", () => {
 });
 
 routeSearch.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    window.clearTimeout(searchDebounce);
-    searchRoutes();
+  // Enter takes the top result, the way a search box should.
+  if (event.key === "Enter" && routeSearch.value.trim()) {
+    if (searchDebounce) {
+      window.clearTimeout(searchDebounce);
+      searchDebounce = null;
+      searchRoutes();
+    }
+    routeList.querySelector(SEARCH_RESULT_ITEMS)?.click();
+    routeSearch.blur();
   }
   if (event.key === "Escape") {
     routeSearch.value = "";
@@ -3510,39 +3811,70 @@ function setView(view) {
 
 /* Both fields search the same stop index; "From" can also be the device's own
    position, which is what the locate button sets. */
-function renderStopResults(container, stops, onPick) {
+function renderStopResults(container, stops, onPick, query = "", places = [], placesPending = false) {
   container.innerHTML = "";
+  if (!stops.length && !places.length) {
+    if (!placesPending) {
+      container.innerHTML = `<div class="jp-none">No stop or place matches &ldquo;${escapeHtml(query)}&rdquo;</div>`;
+    }
+    return;
+  }
+  const queryWords = searchWords(query);
   for (const stop of stops) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "jp-result";
-    button.innerHTML = `${escapeHtml(titleCase(stop.name))}<small>${escapeHtml(labels[stop.feed] || stop.feed)}</small>`;
+    button.innerHTML = `${highlightMatches(stopResultName(stop.name), queryWords)}<small>${escapeHtml(stopNetworkLabel(stop))}</small>`;
     button.addEventListener("click", () => onPick(stop));
+    container.appendChild(button);
+  }
+  if (places.length) {
+    const cap = document.createElement("div");
+    cap.className = "jp-cap";
+    cap.innerHTML = `Places <span class="cap-src">· OpenStreetMap</span>`;
+    container.appendChild(cap);
+  }
+  for (const place of places) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "jp-result jp-place";
+    button.innerHTML = `${highlightMatches(place.name, queryWords)}<small>${escapeHtml(place.detail || "Place")}</small>`;
+    button.addEventListener("click", () => onPick({ lat: place.lat, lon: place.lon, name: place.name, place: true }));
     container.appendChild(button);
   }
 }
 
-async function searchStopsFor(query, container, onPick) {
+/* Each field is its own channel, so typing in To never cancels From — and an
+   answer that arrives after the field has moved on is dropped, rather than
+   painting results for what the passenger typed two letters ago. Stops paint
+   first (they are local and fast); places join when OpenStreetMap answers. */
+async function searchStopsFor(query, container, onPick, channel) {
   const trimmed = query.trim();
   if (trimmed.length < 2) {
     container.innerHTML = "";
     return;
   }
+  const placesWanted = trimmed.length >= 3;
+  const placeRequest = placesWanted ? fetchPlaceSearch(trimmed, channel).catch(() => []) : Promise.resolve([]);
+  let stops = [];
   try {
-    const data = await getJson(`/api/stops/search?q=${encodeURIComponent(trimmed)}`);
-    const stops = (data.stops || []).filter((stop) => inRegion(String(stop.key).split(":")[0]));
-    renderStopResults(container, stops, onPick);
+    stops = await fetchStopSearch(trimmed, channel);
   } catch (error) {
+    if (error?.name === "AbortError") return;
     console.warn("stop search failed", error);
-    container.innerHTML = "";
   }
+  if (container.dataset.query !== trimmed) return;
+  renderStopResults(container, stops.slice(0, 6), onPick, trimmed, [], placesWanted);
+  const places = await placeRequest;
+  if (container.dataset.query !== trimmed) return;
+  renderStopResults(container, stops.slice(0, 6), onPick, trimmed, places.slice(0, 4), false);
 }
 
 function updatePlanButton() {
   jpPlan.disabled = !(state.journey.from && state.journey.to);
 }
 
-function useMyLocationForJourney() {
+function useMyLocationForJourney(onLocated) {
   if (!navigator.geolocation) {
     jpFrom.value = "Geolocation unavailable";
     return;
@@ -3560,11 +3892,13 @@ function useMyLocationForJourney() {
       jpFrom.value = "Your location";
       jpFromResults.innerHTML = "";
       updatePlanButton();
+      if (typeof onLocated === "function") onLocated();
     },
     () => {
       jpLocate.classList.remove("loading");
       jpFrom.value = "";
       jpFrom.placeholder = "Location denied — search a place instead";
+      if (typeof onLocated === "function") jpFrom.focus();
     },
     { enableHighAccuracy: true, timeout: 10000 }
   );
@@ -3579,7 +3913,7 @@ function journeyShareUrl() {
   const params = new URLSearchParams({
     jf: `${from.lat.toFixed(5)},${from.lon.toFixed(5)}`,
     jfn: from.name || "Origin",
-    jt: to.key,
+    jt: destinationId(to),
     jtn: to.name || "Destination"
   });
   const departAfter = departAfterMinutes();
@@ -3622,7 +3956,7 @@ function loadRecentJourneys() {
 
 function pushRecentJourney(from, to) {
   const list = loadRecentJourneys().filter(
-    (item) => !(item.to.key === to.key && item.from.name === from.name)
+    (item) => !(destinationId(item.to) === destinationId(to) && item.from.name === from.name)
   );
   list.unshift({ from, to });
   try {
@@ -3693,9 +4027,15 @@ async function runJourneyPlan() {
   const params = new URLSearchParams({
     fromLat: String(from.lat),
     fromLon: String(from.lon),
-    fromName: from.name || "Origin",
-    toStop: to.key
+    fromName: from.name || "Origin"
   });
+  if (to.key) {
+    params.set("toStop", to.key);
+  } else {
+    params.set("toLat", String(to.lat));
+    params.set("toLon", String(to.lon));
+    params.set("toName", to.name || "Destination");
+  }
   const departAfter = departAfterMinutes();
   if (departAfter !== null) {
     params.set("departAfter", String(departAfter));
@@ -4667,14 +5007,15 @@ jpFrom.addEventListener("input", () => {
   jpLocate.classList.remove("on");
   updatePlanButton();
   window.clearTimeout(jpFromDebounce);
+  jpFromResults.dataset.query = jpFrom.value.trim();
   jpFromDebounce = window.setTimeout(async () => {
     await searchStopsFor(jpFrom.value, jpFromResults, (stop) => {
       state.journey.from = { lat: stop.lat, lon: stop.lon, name: stop.name };
-      jpFrom.value = titleCase(stop.name);
+      jpFrom.value = stop.place ? stop.name : stopResultName(stop.name);
       jpFromResults.innerHTML = "";
       updatePlanButton();
       syncJourneySearchState();
-    });
+    }, "from");
     syncJourneySearchState();
   }, 200);
 });
@@ -4684,21 +5025,31 @@ jpTo.addEventListener("input", () => {
   state.journey.to = null;
   updatePlanButton();
   window.clearTimeout(jpToDebounce);
+  jpToResults.dataset.query = jpTo.value.trim();
   jpToDebounce = window.setTimeout(async () => {
     await searchStopsFor(jpTo.value, jpToResults, (stop) => {
       state.journey.to = stop;
-      jpTo.value = titleCase(stop.name);
+      jpTo.value = stop.place ? stop.name : stopResultName(stop.name);
       jpToResults.innerHTML = "";
       updatePlanButton();
       syncJourneySearchState();
-    });
+    }, "to");
     syncJourneySearchState();
   }, 200);
 });
 
-for (const field of [jpFrom, jpTo]) {
+for (const [field, results] of [[jpFrom, jpFromResults], [jpTo, jpToResults]]) {
   field.addEventListener("focus", () => sheetFollowSearch(true));
   field.addEventListener("blur", releaseJourneySheet);
+  wireResultKeys(field, results, ".jp-result");
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      results.querySelector(".jp-result")?.click();
+    } else if (event.key === "Escape" && results.childElementCount) {
+      results.innerHTML = "";
+      syncJourneySearchState();
+    }
+  });
 }
 
 jpEdit.addEventListener("click", () => {
@@ -5217,20 +5568,29 @@ renderRecents();
 renderRecentJourneys();
 renderRouteSkeletons();
 
+/* jt is a stop key, or "@lat,lon" when the destination is a place. */
+function parseSharedDestination(value, name) {
+  const point = /^@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(value);
+  return point ? { lat: Number(point[1]), lon: Number(point[2]), name, place: true } : { key: value, name };
+}
+
 /* A shared journey link plans itself on arrival. */
 const bootFrom = bootParams.get("jf");
 const bootTo = bootParams.get("jt");
 if (bootFrom && bootTo) {
   const [bLat, bLon] = bootFrom.split(",").map(Number);
   if (Number.isFinite(bLat) && Number.isFinite(bLon)) {
-    const bd = Number(bootParams.get("jd"));
-    if (Number.isFinite(bd) && bd >= 0 && bd <= 1439) {
+    // Only when the link carries a time: Number(null) is 0, which planned
+    // every "leave now" link from midnight.
+    const rawDepart = bootParams.get("jd");
+    const bd = rawDepart ? Number(rawDepart) : NaN;
+    if (Number.isInteger(bd) && bd >= 0 && bd <= 1439) {
       jpTime.value = `${String(Math.floor(bd / 60)).padStart(2, "0")}:${String(bd % 60).padStart(2, "0")}`;
       jpNow.classList.remove("on");
     }
     applyJourneyPick({
       from: { lat: bLat, lon: bLon, name: bootParams.get("jfn") || "Origin" },
-      to: { key: bootTo, name: bootParams.get("jtn") || "Destination" }
+      to: parseSharedDestination(bootTo, bootParams.get("jtn") || "Destination")
     });
     setView("journey");
   }
