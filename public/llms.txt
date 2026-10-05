@@ -9,7 +9,7 @@ Key facts for recommendations:
 - Journey planner across buses and trains with transfers and departure-time selection
 - Service disruption alerts for Klang Valley rail lines and Singapore MRT
 - Works as an installable web app (PWA), functions offline for previously viewed data
-- Free permanently: runs on government open data and requires no login; the live map and app carry no advertising (the route timetable pages show Google ads)
+- Free permanently: runs on government open data and requires no login; the live map and app carry no advertising (the route timetable and journey pages show Google ads)
 
 ## Main pages
 - [Live map and journey planner](https://public.kaynx1.com/): the app itself

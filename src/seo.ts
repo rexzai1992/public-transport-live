@@ -110,7 +110,8 @@ function guidesFor(feedId: FeedId): string[] {
   return [];
 }
 
-/* Google AdSense — on the timetable pages (/routes and /route/...) only. The
+/* Google AdSense — on the timetable and journey pages (/routes, /route/...,
+   /go/...) only. The
    live map and the Android app carry no ads; the homepage has just the
    ownership <meta> (public/index.html). Auto ads are switched on in the AdSense
    dashboard and can only appear where this script loads. The three fixed spots
@@ -1184,7 +1185,7 @@ const FAQS: [string, string][] = [
   ["How can I track Rapid KL buses in real time?",
    "Public Transport Live (public.kaynx1.com) shows the actual GPS position of every Rapid KL bus, MRT feeder bus and Rapid Penang bus on a live map, refreshed every 30 seconds from Prasarana's official open-data feed. Open the app, pick a route, and watch the bus move."],
   ["Is there a free app for KL public transport without ads?",
-   "Yes — the Public Transport Live map and Android app are completely free, with no advertising, no account and no tracking. (The route timetable pages on the website carry Google ads, which help keep the service free.) It runs on Malaysian and Singaporean government open data, so there is nothing to pay for and nothing being sold."],
+   "Yes — the Public Transport Live map and Android app are completely free, with no advertising, no account and no tracking. (The route timetable and journey pages on the website carry Google ads, which help keep the service free.) It runs on Malaysian and Singaporean government open data, so there is nothing to pay for and nothing being sold."],
   ["Does it cover Singapore buses and MRT?",
    "Yes. Every Singapore public bus shows live arrival times including how crowded the bus is (seats available, standing, or crowded), and MRT lines show real-time platform crowding from LTA. A journey planner works across both buses and trains."],
   ["Can I plan a journey with transfers?",
@@ -1340,14 +1341,16 @@ ${journeys.length > 1 ? `<p>${journeys.length - 1} alternative${journeys.length 
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} — route, time &amp; steps</title>
 <meta name="description" content="${esc(`How to get from ${pair.fromName} to ${pair.toName}: step-by-step public transport directions${best ? `, typically ~${best.totalMinutes} minutes` : ""}, with live tracking. Free, no login.`)}">
-<link rel="canonical" href="https://public.kaynx1.com/go/${pair.slug}">${PAGE_STYLE}</head><body>${topBar()}<main>
+<link rel="canonical" href="https://public.kaynx1.com/go/${pair.slug}">${PAGE_STYLE}${AD_HEAD}</head><body>${topBar()}<main>
 <p class="crumbs"><a href="/routes">All routes</a> \u203a Journeys</p>
 <h1>${esc(pair.fromName)} → ${esc(pair.toName)}</h1>
 ${body}
+${adSpot(0)}
 <h2>More journeys</h2>
 <ol>${JOURNEY_PAIRS.filter((p) => p.slug !== pair.slug).slice(0, 6).map((p) => `<li><a href="/go/${p.slug}">${esc(p.fromName)} → ${esc(p.toName)}</a></li>`).join("")}</ol>
+${adSpot(1)}
 <p class="foot"><a href="/routes">All routes</a> · <a href="/">Public Transport Live</a> · times are estimates — <a href="/terms.html">Terms</a><br>${CREDITS}</p>
-</main></body></html>`;
+</main>${AD_FOOT}</body></html>`;
 
     goCache.set(pair.slug, { expiresAt: Date.now() + 10 * 60 * 1000, html });
     res.setHeader("Cache-Control", "public, max-age=600");
