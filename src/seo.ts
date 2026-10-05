@@ -19,6 +19,9 @@ function esc(value: unknown): string {
 /* Monochrome, like the app (design/UI-BRIEF.md): black and white glass, colour
    only where it carries meaning — a rail line's own colour. */
 const PAGE_STYLE = `<link rel="icon" href="/assets/bus.svg"><link rel="apple-touch-icon" href="/assets/icon-192.png">
+<meta property="og:site_name" content="Public Transport Live"><meta property="og:type" content="website">
+<meta property="og:image" content="https://public.kaynx1.com/assets/share.png"><meta name="twitter:card" content="summary_large_image">
+<meta name="robots" content="index, follow, max-image-preview:large">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -637,7 +640,9 @@ type MapStop = { name: string; lat: number; lon: number; interchange?: string; w
 function routeMapHtml(
   shapes: { lat: number; lon: number }[][],
   stops: MapStop[],
-  colour: string
+  colour: string,
+  /** The route's own colour for the street map; null draws it in ink. */
+  liveColour: string | null = null
 ): string {
   const lines = shapes.filter((line) => line.length > 1);
   const geometry = lines.length ? lines : [stops];
@@ -678,9 +683,11 @@ function routeMapHtml(
 
   const placed: { x: number; y: number }[] = [];
   const labels: string[] = [];
+  const labelled = new Set<MapStop>();
   const label = (stop: MapStop, at: { x: number; y: number }, kind: string) => {
     if (placed.some((p) => Math.abs(p.x - at.x) < 120 && Math.abs(p.y - at.y) < 26)) return;
     placed.push(at);
+    labelled.add(stop);
     // Rough width in map units (~8.5 per character at 12px); open the label
     // towards whichever side of the dot has room for it.
     const width = (stop.name.length + (stop.interchange?.length ?? 0) * 0.8) * 8.5 + 30;
@@ -707,7 +714,31 @@ function routeMapHtml(
     label(stop, project(stop), "minor");
   }
 
-  return `<figure class="rmap" style="--lc:${colour}" aria-label="Map of the route">
+  /* The same route for the street map (public/routemap.js): points thinned
+     to ~10 m and rounded, the same stops labelled as in the drawing. */
+  const thin = (line: { lat: number; lon: number }[]) => {
+    const out: number[][] = [];
+    for (const p of line) {
+      const last = out[out.length - 1];
+      if (last && Math.abs(last[0] - p.lon) < 0.0001 && Math.abs(last[1] - p.lat) < 0.0001) continue;
+      out.push([+p.lon.toFixed(5), +p.lat.toFixed(5)]);
+    }
+    return out;
+  };
+  const live = {
+    lines: geometry.map((line) => ({ c: liveColour, p: thin(line) })),
+    stops: stops.map((stop, i) => ({
+      p: [+stop.lon.toFixed(5), +stop.lat.toFixed(5)],
+      /* Rail lines ring every interchange; a bus passes so many stations that
+         only the labelled ones get a ring, or the line disappears under them. */
+      k: i === 0 || i === stops.length - 1 ? "e" : stop.interchange && (liveColour || labelled.has(stop)) ? "x" : "",
+      n: stop.name,
+      ...(stop.interchange ? { i: stop.interchange } : {}),
+      ...(labelled.has(stop) ? { l: 1 } : {})
+    }))
+  };
+
+  return `<figure class="rmap livemap" style="--lc:${colour}" aria-label="Map of the route" data-map='${esc(JSON.stringify(live))}'>
 <svg viewBox="0 0 ${MAP_W} ${MAP_H}" role="img" aria-hidden="true"><g class="ln">${paths}</g><g class="st">${dots}</g></svg>
 ${labels.join("")}
 </figure>`;
@@ -946,7 +977,8 @@ seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
               weight: rail.length
             };
           }),
-          lineColor || "var(--ink)"
+          lineColor || "var(--ink)",
+          lineColor || null
         )
       : "";
     const interchangeCount = mapPattern ? mapPattern.stops.filter((stop) => changesAt(stop.stopId).length).length : 0;
@@ -1006,6 +1038,7 @@ ${adSpot(2)}
 <p class="foot"><a href="/routes">All routes</a> · <a href="/">Public Transport Live</a> · <a href="/terms.html">Terms</a><br>${CREDITS}</p>
 </main>
 <script>${ROUTE_PAGE_SCRIPT}</script>
+<script src="/routemap.js" defer></script>
 ${AD_FOOT}
 </body></html>`);
   } catch (error) {
@@ -1084,6 +1117,14 @@ const ROUTE_PAGE_STYLE = `<style>
 .rmap .st circle.end{fill:var(--lc);stroke:var(--bg);stroke-width:2.5}
 .lbl{background:color-mix(in srgb,var(--raised) 88%,transparent);border-radius:6px;color:var(--ink);font-size:12px;font-weight:600;line-height:1.25;max-width:46%;overflow:hidden;padding:2px 6px;position:absolute;text-overflow:ellipsis;transform:translate(10px,-50%);white-space:nowrap}
 .lbl.l{transform:translate(calc(-100% - 10px),-50%)}
+/* Street map (public/routemap.js) laid over the drawing once it loads. */
+.rmap .ml-map{inset:0;opacity:0;position:absolute;transition:opacity .4s}
+.rmap.live .ml-map{opacity:1}
+.rmap.live>svg,.rmap.live>.lbl{visibility:hidden}
+.ml-lbl{background:color-mix(in srgb,var(--raised) 90%,transparent);border-radius:6px;color:var(--ink);font:500 12px Inter,sans-serif;padding:2px 6px;white-space:nowrap}
+.ml-lbl.end{font-weight:700}
+.ml-lbl i{color:var(--ink3);font-size:10.5px;font-style:normal;font-weight:600;margin-left:5px}
+.rmap .maplibregl-ctrl-attrib{font-size:10.5px}
 .lbl.minor{color:var(--ink2);font-weight:500}
 .lbl i{color:var(--ink3);font-size:10.5px;font-style:normal;font-weight:600;margin-left:5px}
 .sc{display:flex;flex-direction:column;gap:3px;min-width:0}
@@ -1107,7 +1148,7 @@ const ROUTE_PAGE_STYLE = `<style>
   .next-big{font-size:32px}
   .freq th{width:46%}
 }
-@media (max-width:520px){.lbl.minor{display:none}.lbl{font-size:11px}.dtabs{display:flex}.dtabs button{flex:1 1 auto}.freq th,.freq td{padding:10px 12px}}
+@media (max-width:520px){.lbl.minor{display:none}.ml-lbl:not(.end){display:none}.lbl{font-size:11px}.dtabs{display:flex}.dtabs button{flex:1 1 auto}.freq th,.freq td{padding:10px 12px}}
 </style>`;
 
 /* Live parts of a route page: the countdown to the next departure, the part
@@ -1240,10 +1281,11 @@ seoRouter.get("/sitemap.xml", async (_req, res, next) => {
         urls.push(`https://public.kaynx1.com/route/${feedId}/${encodeURIComponent(route.routeId)}`);
       }
     }
+    const today = new Date().toISOString().slice(0, 10);
     res.setHeader("Cache-Control", "public, max-age=86400");
     res.type("application/xml").send(
       `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-        urls.map((url) => `<url><loc>${url}</loc></url>`).join("\n") +
+        urls.map((url) => `<url><loc>${url}</loc><lastmod>${today}</lastmod></url>`).join("\n") +
         `\n</urlset>`
     );
   } catch (error) {
