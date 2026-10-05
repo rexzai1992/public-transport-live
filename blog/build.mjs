@@ -40,6 +40,12 @@ mkdirSync(out, { recursive: true });
 
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
+/* Every photo is from Wikimedia Commons under an open licence; img/
+   photo-credits.json holds title, author, source, licence and what we changed,
+   which is exactly what the licences ask us to show (TASL). */
+const CREDITS = JSON.parse(readFileSync(join(here, "img", "photo-credits.json"), "utf-8"));
+const SITE_NAME = "Public Transport Live — Malaysia & Singapore Guides";
+
 /* The same black-and-white system as the app and its /routes pages. Colour
    appears only as a line colour: each guide carries one, like a route. */
 const style = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -68,14 +74,41 @@ main{margin:0 auto;max-width:1120px;padding:0 20px 72px}
 .crumbs{color:var(--ink3);font-size:12.5px;margin:22px 0 0}
 .crumbs a{color:var(--ink2);text-decoration:none}
 /* Hero: the night map, darkened flat (no gradients, per the design brief). */
-.hero{background:#050505 url("/img/hero-banner.webp") center/cover no-repeat;border-radius:20px;margin-top:20px;overflow:hidden;position:relative}
-.hero::after{background:rgba(5,5,5,.72);content:"";inset:0;position:absolute}
+.hero{background:#080808 url("/img/hero-network.webp") 62% center/cover no-repeat;border-radius:20px;margin-top:20px;overflow:hidden;position:relative}
+.hero::after{background:rgba(8,8,8,.55);content:"";inset:0;position:absolute}
+@media (min-width:900px){.hero::after{background:rgba(8,8,8,.45)}.hero-in{max-width:660px}}
 .hero-in{color:#fff;padding:44px 40px;position:relative;z-index:1}
 .eyebrow{color:rgba(255,255,255,.6);font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase}
 .hero h1{font-size:clamp(28px,4vw,42px);font-weight:800;letter-spacing:-.03em;line-height:1.1;margin:10px 0 12px;max-width:16ch}
 .hero p{color:rgba(255,255,255,.74);font-size:16.5px;margin:0 0 24px;max-width:50ch}
 .btn{background:#fff;border-radius:11px;color:#0a0a0a;display:inline-block;font-size:14.5px;font-weight:650;margin:0 8px 8px 0;padding:12px 20px;text-decoration:none}
 .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.35);color:#fff}
+.gsearch{align-items:center;background:#fff;border-radius:12px;color:#555;display:flex;gap:10px;margin:4px 0 14px;max-width:560px;padding:0 14px}
+.gsearch input{background:transparent;border:0;color:#0a0a0a;flex:1;font:inherit;font-size:16px;min-width:0;outline:none;padding:13px 0}
+.quick{display:flex;flex-wrap:wrap;gap:8px;max-width:620px}
+.quick a{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:999px;color:#fff;font-size:13px;font-weight:500;padding:7px 13px;text-decoration:none}
+.quick a:hover{background:rgba(255,255,255,.2)}
+.hero .herocredit{color:rgba(255,255,255,.45);font-size:10.5px;margin:0;padding:0 40px 12px;position:relative;text-align:right;z-index:1}
+@media (max-width:640px){.hero .herocredit{padding:0 22px 12px;text-align:left}}
+.starts{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));margin-top:22px}
+.feat{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);display:flex;flex-direction:column;overflow:hidden;text-decoration:none;transition:border-color .15s,transform .15s}
+.feat:hover{border-color:var(--ink3);transform:translateY(-2px)}
+.feat img{aspect-ratio:2/1;display:block;height:auto;object-fit:cover;width:100%}
+.feat .fe{color:var(--ink3);font-size:11.5px;font-weight:700;letter-spacing:.08em;padding:14px 17px 0;text-transform:uppercase}
+.feat b{font-size:19px;letter-spacing:-.015em;line-height:1.3;padding:4px 17px 0}
+.feat span:last-child{color:var(--ink2);font-size:14px;padding:6px 17px 17px}
+.liveband{align-items:center;background:var(--inv);border-radius:var(--r);color:var(--invink);display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;margin-top:44px;padding:22px 24px}
+.liveband b{display:block;font-size:20px;letter-spacing:-.01em}
+.liveband span{opacity:.75;font-size:14.5px}
+.btn.dark{background:var(--invink);color:var(--inv)}
+.btn.line{background:transparent;border:1px solid currentColor;color:var(--invink)}
+.faq{margin-top:44px;max-width:760px}
+.faq h2{font-size:22px;letter-spacing:-.02em}
+.faq details{border-top:1px solid var(--rule);padding:4px 0}
+.faq summary{cursor:pointer;font-size:16px;font-weight:600;padding:12px 0}
+.faq details p{color:var(--ink2);margin:0 0 14px}
+.credits td img{border-radius:8px;display:block}
+.credits small{color:var(--ink3)}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
 .chips span{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:999px;color:rgba(255,255,255,.8);font-size:12.5px;padding:6px 13px}
 .chips b{color:#fff;font-variant-numeric:tabular-nums}
@@ -87,7 +120,7 @@ main{margin:0 auto;max-width:1120px;padding:0 20px 72px}
 .card{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);display:flex;flex-direction:column;overflow:hidden;text-decoration:none;transition:border-color .15s,transform .15s}
 .card:hover{border-color:var(--ink3);transform:translateY(-2px)}
 .card::before{background:var(--accent,var(--ink));content:"";height:4px}
-.card img{aspect-ratio:2/1;display:block;object-fit:cover;width:100%}
+.card img{aspect-ratio:2/1;display:block;height:auto;object-fit:cover;width:100%}
 .card .cb{padding:15px 17px 17px}
 .card .ct{color:var(--ink3);font-size:11.5px;font-weight:600;letter-spacing:.06em;margin-bottom:6px;text-transform:uppercase}
 .card b{display:block;font-size:17px;font-weight:700;letter-spacing:-.01em;line-height:1.3}
@@ -124,6 +157,15 @@ figcaption{color:var(--ink3);font-size:12px;margin-top:6px}
 .gmap svg{display:block;height:auto;width:100%}
 .gmap .ln path{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:4.5}
 .gmap .st circle{stroke:var(--bg);stroke-width:2.5}
+.gmap .gm{position:relative}
+.gm .ml-map{inset:0;opacity:0;position:absolute;transition:opacity .4s}
+.gm.live .ml-map{opacity:1}
+.gm.live>svg,.gm.live>.lb{visibility:hidden}
+.ml-lbl{background:color-mix(in srgb,var(--raised) 90%,transparent);border-radius:6px;color:var(--ink);font:500 12px Inter,sans-serif;padding:2px 6px;white-space:nowrap}
+.ml-lbl.end{font-weight:700}
+.ml-lbl i{color:var(--ink3);font-size:10.5px;font-style:normal;margin-left:5px}
+.photo img{aspect-ratio:3/2;height:auto}
+.photo figcaption a{color:var(--ink2)}
 .gmap .lb{background:color-mix(in srgb,var(--raised) 88%,transparent);border-radius:6px;font-size:12px;font-weight:600;padding:2px 6px;position:absolute;transform:translate(10px,-50%);white-space:nowrap}
 .gmap .lb.l{transform:translate(calc(-100% - 10px),-50%)}
 .gmap .legend{border-top:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;padding:10px 14px}
@@ -138,13 +180,17 @@ figcaption{color:var(--ink3);font-size:12px;margin-top:6px}
 
 const BUS_MARK = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 4h12a2.5 2.5 0 0 1 2.5 2.5v9a2.5 2.5 0 0 1-1.4 2.25v1.6a1.3 1.3 0 0 1-2.6 0v-1.1H7.5v1.1a1.3 1.3 0 0 1-2.6 0v-1.6A2.5 2.5 0 0 1 3.5 15.5v-9A2.5 2.5 0 0 1 6 4Z" fill="var(--invink)"/><rect x="5.6" y="6.4" width="12.8" height="4.9" rx="1" fill="var(--inv)"/><circle cx="7.9" cy="14.4" r="1.15" fill="var(--inv)"/><circle cx="16.1" cy="14.4" r="1.15" fill="var(--inv)"/></svg>`;
 
-const page = ({ title, desc, canonical, body, accent = "", current = "", head = "" }) => `<!doctype html>
+const page = ({ title, desc, canonical, body, accent = "", current = "", head = "", image = "photo-kl-lrt", type = "website" }) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(desc)}">
 <link rel="canonical" href="${canonical}">
 <link rel="alternate" type="application/rss+xml" href="${SITE}/rss.xml">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta property="og:site_name" content="${esc(SITE_NAME)}"><meta property="og:type" content="${type}"><meta property="og:url" content="${canonical}">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
+<meta property="og:image" content="${SITE}/img/${image}.webp"><meta property="og:image:width" content="1600"><meta property="og:image:height" content="1067">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(desc)}"><meta name="twitter:image" content="${SITE}/img/${image}.webp">
 <meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#080808" media="(prefers-color-scheme: dark)">
 ${head}${style}</head><body>
 <header class="top"><div class="top-in">
@@ -156,10 +202,24 @@ ${body}
 <p class="foot">Public Transport Live is an independent guide built on open data, not affiliated with any operator.
 Fares, rules and timetables change — check the <a href="${APP_REF}">live tracker</a> and the operator before you travel.<br>
 Route figures and maps: Malaysia Open API (Prasarana, KTMB, APAD) and LTA DataMall · Map data &copy; <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> contributors
+· Basemap © <a href="https://protomaps.com" rel="noopener">Protomaps</a> · Photos from Wikimedia Commons under open licences — <a href="/credits">photo credits</a>
 &nbsp;·&nbsp; <a href="${APP}/download/ptlive.apk">Android app</a> &nbsp;·&nbsp; <a href="${APP}/terms.html">Terms &amp; Privacy</a></p>
 </main>
+${body.includes("livemap") ? `<script src="${APP}/routemap.js" defer></script>` : ""}
 <script>try{fetch("${APP}/api/guide-view?page="+encodeURIComponent(location.pathname),{mode:"no-cors"})}catch(e){}</script>
 </body></html>`;
+
+/* A photo with its credit in the caption: author, title, source and licence,
+   plus the change we made (a 3:2 crop and resize), as CC licences require. */
+function photoFigure(name, alt, eager = false) {
+  const c = CREDITS[name];
+  if (!c) throw new Error(`no credit for ${name} — add it to img/photo-credits.json`);
+  const licence = c.license === "CC0"
+    ? `<a href="${c.licenseUrl}" rel="noopener license">CC0</a> (public domain)`
+    : `<a href="${c.licenseUrl}" rel="noopener license">${esc(c.license)}</a>`;
+  return `<figure class="photo"><img src="/img/${name}.webp" srcset="/img/${name}-sm.webp 800w, /img/${name}.webp 1600w" sizes="(max-width: 800px) 100vw, 760px" width="1600" height="1067" alt="${esc(alt)}"${eager ? ' fetchpriority="high"' : ' loading="lazy"'} decoding="async">
+<figcaption>Photo: ${esc(c.artist)}, <a href="${c.page}" rel="noopener">${esc(c.title.replace(/\.(jpe?g|png|webp)$/i, ""))}</a> (Wikimedia Commons), ${licence}; ${esc(c.modified)}.</figcaption></figure>`;
+}
 
 /* ------------------------------------------------------------------------ */
 /* Real data, not filler. Posts embed placeholders resolved at build time    */
@@ -302,11 +362,42 @@ async function routesMap(category, codes) {
   list.forEach((f) => { if (f.stopPoints[0]) label(f.from, P(f.stopPoints[0]), false); });
   list.forEach((f) => { const last = f.stopPoints[f.stopPoints.length - 1]; if (last) label(f.to, P(last), true); });
 
+  /* The same routes for the street map (public/routemap.js, loaded from the
+     app's domain): thinned points, every stop, the ends labelled. */
+  const thin = (line) => {
+    const pts = [];
+    for (const p of line) {
+      const last = pts[pts.length - 1];
+      if (last && Math.abs(last[0] - p.lon) < 0.0001 && Math.abs(last[1] - p.lat) < 0.0001) continue;
+      pts.push([+p.lon.toFixed(5), +p.lat.toFixed(5)]);
+    }
+    return pts;
+  };
+  const liveColour = (c) => (c.startsWith("#") ? c : null);
+  const live = {
+    lines: list.flatMap((f, i) => (f.shapes.length ? f.shapes : [f.stopPoints]).map((line) => ({ c: liveColour(colours[i]), p: thin(line) }))),
+    stops: list.flatMap((f, i) => f.stopPoints.map((stop, j) => {
+      const end = j === 0 || j === f.stopPoints.length - 1;
+      return { p: [+stop.lon.toFixed(5), +stop.lat.toFixed(5)], k: end ? "e" : "", n: end ? (j === 0 ? f.from : f.to) : stop.name, ...(liveColour(colours[i]) ? { c: colours[i] } : {}), ...(end ? { l: 1 } : {}) };
+    }))
+  };
+  // Shared ends (two routes from one terminal) are labelled once.
+  const seenLabel = new Set();
+  for (const stop of live.stops) {
+    if (!stop.l) continue;
+    const key = stop.n;
+    if (seenLabel.has(key)) delete stop.l;
+    seenLabel.add(key);
+  }
+
   const legend = list.map((f, i) => `<span><i style="background:${colours[i]}"></i><a href="${f.link}">${esc(f.code.replace(/\s+Line$/i, ""))}</a> ${f.from === f.to ? `loop from ${esc(f.from)}` : `${esc(f.from)} ↔ ${esc(f.to)}`}</span>`).join("");
-  return `<figure class="gmap" aria-label="Map of the routes"><div style="position:relative"><svg viewBox="0 0 ${W} ${H}" aria-hidden="true"><g class="ln">${paths}</g><g class="st">${dots.join("")}</g></svg>${labels.join("")}</div><div class="legend">${legend}</div></figure>`;
+  return `<figure class="gmap" aria-label="Map of the routes"><div class="gm livemap" data-map='${esc(JSON.stringify(live))}'><svg viewBox="0 0 ${W} ${H}" aria-hidden="true"><g class="ln">${paths}</g><g class="st">${dots.join("")}</g></svg>${labels.join("")}</div><div class="legend">${legend}</div></figure>`;
 }
 
 async function resolvePlaceholders(body) {
+  // {{photo:name|alt text}} — the first photo on a page loads eagerly (LCP).
+  let photoCount = 0;
+  body = body.replace(/\{\{photo:([a-z0-9-]+)\|([^}]*)\}\}/g, (_, name, alt) => photoFigure(name, alt, photoCount++ === 0));
   for (const [token, category, codes] of [...body.matchAll(/\{\{routes:([a-z-]+):([^}]+)\}\}/g)]) {
     body = body.replaceAll(token, await routesTable(category, codes.split("|")));
   }
@@ -338,8 +429,8 @@ const posts = readdirSync(join(here, "posts")).filter((f) => f.endsWith(".html")
   });
 
 const inCountry = (post, code) => post.country === code || post.country === "both";
-const thumb = (p) => (p.body.match(/\/img\/([a-z-]+\.webp)/) || [])[0] || (inCountry(p, "sg") && !inCountry(p, "my") ? "/img/singapore-mrt.webp" : "/img/klang-valley-rail.webp");
-const card = (p) => `<a class="card" href="/${p.slug}" style="--accent:${p.accent || "var(--ink)"}"><img src="${thumb(p)}" alt="" loading="lazy"><div class="cb"><div class="ct">${esc(p.topic)}${p.country === "both" ? " · MY + SG" : ""}</div><b>${esc(p.title)}</b><span>${esc(p.desc)}</span></div></a>`;
+const imageOf = (p) => (p.image && CREDITS[p.image] ? p.image : "photo-kl-lrt");
+const card = (p) => `<a class="card" href="/${p.slug}" style="--accent:${p.accent || "var(--ink)"}" data-s="${esc(`${p.title} ${p.desc} ${p.topic}`.toLowerCase())}"><img src="/img/${imageOf(p)}-sm.webp" width="800" height="533" alt="" loading="lazy" decoding="async"><div class="cb"><div class="ct">${esc(p.topic)}${p.country === "both" ? " · MY + SG" : ""}</div><b>${esc(p.title)}</b><span>${esc(p.desc)}</span></div></a>`;
 const crumbsSchema = (items) => `<script type="application/ld+json">${JSON.stringify({
   "@context": "https://schema.org",
   "@type": "BreadcrumbList",
@@ -349,7 +440,7 @@ const crumbsSchema = (items) => `<script type="application/ld+json">${JSON.strin
 const stamp = new Date().toISOString().slice(0, 10);
 for (const post of posts) {
   const resolved = await resolvePlaceholders(post.body);
-  const ogImage = (post.body.match(/\/img\/([a-z-]+\.webp)/) || [null, "hero-banner.webp"])[1];
+  const ogImage = imageOf(post);
   const home = post.country === "sg" ? COUNTRIES.sg : COUNTRIES.my;
   const related = posts.filter((p) => p.slug !== post.slug && (inCountry(p, post.country === "both" ? "my" : post.country) || inCountry(p, post.country === "both" ? "sg" : post.country))).slice(0, 3);
   const head = `<script type="application/ld+json">${JSON.stringify({
@@ -359,12 +450,14 @@ for (const post of posts) {
     description: post.desc,
     datePublished: post.date,
     dateModified: post.updated || stamp,
-    image: `${SITE}/img/${ogImage}`,
-    author: { "@type": "Organization", name: "Public Transport Live" },
-    publisher: { "@type": "Organization", name: "Public Transport Live", url: APP }
+    image: `${SITE}/img/${ogImage}.webp`,
+    mainEntityOfPage: `${SITE}/${post.slug}`,
+    inLanguage: "en",
+    about: post.country === "sg" ? "Singapore" : post.country === "both" ? ["Malaysia", "Singapore"] : "Malaysia",
+    author: { "@type": "Organization", name: "Public Transport Live", url: APP },
+    publisher: { "@type": "Organization", name: "Public Transport Live", url: APP, logo: { "@type": "ImageObject", url: `${APP}/assets/icon-512.png` } }
   }).replace(/</g, "\\u003c")}</script>
-${crumbsSchema([["Guides", `${SITE}/`], [home.name, `${SITE}/${home.slug}`], [post.title]])}
-<meta property="og:image" content="${SITE}/img/${ogImage}">`;
+${crumbsSchema([["Guides", `${SITE}/`], [home.name, `${SITE}/${home.slug}`], [post.title]])}`;
   const body = `<p class="crumbs"><a href="/">Guides</a> › <a href="/${home.slug}">${home.name}</a> › ${esc(post.topic)}</p>
 <article><h1>${esc(post.title)}</h1><p class="meta">${esc(post.topic)} · updated ${post.updated || post.date}</p>
 ${resolved}
@@ -378,7 +471,9 @@ ${related.length ? `<section class="more"><div class="cap"><h2>More guides</h2><
     body,
     accent: post.accent || "",
     current: post.country === "both" ? "" : post.country,
-    head
+    head,
+    image: ogImage,
+    type: "article"
   }));
 }
 
@@ -412,7 +507,13 @@ for (const code of ["my", "sg"]) {
     canonical: `${SITE}/${c.slug}`,
     accent: c.accent,
     current: code,
-    head: crumbsSchema([["Guides", `${SITE}/`], [c.name]]),
+    image: code === "sg" ? "photo-sg-mrt" : "photo-kl-lrt",
+    head: crumbsSchema([["Guides", `${SITE}/`], [c.name]]) + `<script type="application/ld+json">${JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      name: `${c.name} public transport guides`,
+      itemListElement: mine.map((p, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE}/${p.slug}`, name: p.title }))
+    }).replace(/</g, "\\u003c")}</script>`,
     body: `<p class="crumbs"><a href="/">Guides</a> › ${c.name}</p>
 <h1 style="font-size:clamp(28px,4vw,40px);letter-spacing:-.03em;margin:14px 0 10px">${c.name}</h1>
 <p class="lead">${c.intro}</p>
@@ -421,35 +522,130 @@ ${sections}`
   }));
 }
 
-const countryRow = (code) => {
-  const c = COUNTRIES[code];
-  const list = posts.filter((p) => inCountry(p, code));
-  return `<div class="cap"><h2>${c.name}</h2><a href="/${c.slug}">All ${list.length} guides →</a></div><div class="grid">${list.slice(0, 6).map(card).join("")}</div>`;
-};
+/* The homepage answers the questions people actually search, then lists
+   every guide once: Malaysia, Singapore, and the cross-border/airport guides
+   that belong to both (shown once, in their own section). */
+const QUICK = [
+  ["KLIA to KL city", "klia-changi-by-public-transport"],
+  ["Changi to the city", "klia-changi-by-public-transport"],
+  ["JB ↔ Singapore", "johor-bahru-to-singapore"],
+  ["Batu Caves by train", "kl-attractions-by-train"],
+  ["Penang airport to George Town", "penang-by-bus"],
+  ["Sentosa by MRT", "singapore-attractions-by-mrt"],
+  ["KL to Melaka", "melaka-by-bus"],
+  ["Singapore Tourist Pass", "singapore-fares-and-tourist-pass"]
+].filter(([, slug]) => posts.some((p) => p.slug === slug));
+
+/* Short, checked answers (see the linked guides); also FAQPage data. */
+const FAQ = [
+  ["Can I tap a bank card on KL trains?", "Not on Rapid KL trains yet — the LRT, MRT, Monorail and BRT gates take a Touch 'n Go card or a token. KTM Komuter gates do accept contactless Visa, Mastercard and MyDebit cards and Apple Pay.", "kl-fares-and-passes"],
+  ["How do I get from Johor Bahru to Singapore without a car?", "Take the five-minute KTM Shuttle Tebrau train from JB Sentral to Woodlands (RM5), or a cross-border bus such as Causeway Link CW1, CW2 or CW5 or SBS Transit 160, 170 or 170X. The new RTS Link train is targeted for February 2027.", "johor-bahru-to-singapore"],
+  ["Is the Singapore Tourist Pass worth it?", "Usually only for busy multi-day sightseeing. A 1-day pass is S$17 and a 3-day pass S$29, while most single trips cost about S$1.30–2.60 when you tap a card. Foreign Visa and Mastercard cards pay a S$0.60 fee per day of travel.", "singapore-fares-and-tourist-pass"],
+  ["How do I get to Batu Caves by train?", "Take the KTM Komuter to Batu Caves, the end of the line, about 30 minutes from KL Sentral; the station is beside the temple. Until about the end of 2026, weekday trains run only about hourly between 10am and 4pm.", "kl-attractions-by-train"],
+  ["Do Penang buses take cards?", "Regular Rapid Penang buses take cash only and the driver gives no change, so carry small notes. The CAT shuttle around George Town is free.", "penang-by-bus"]
+];
+
+const myPosts = posts.filter((p) => p.country === "my");
+const sgPosts = posts.filter((p) => p.country === "sg");
+const both = posts.filter((p) => p.country === "both");
+const feature = (href, image, eyebrow, title, text) => `<a class="feat" href="${href}"><img src="/img/${image}-sm.webp" width="800" height="533" alt="" loading="lazy" decoding="async"><span class="fe">${esc(eyebrow)}</span><b>${esc(title)}</b><span>${esc(text)}</span></a>`;
+const routeTotal = total("my") + total("sg") ? fmt(total("my") + total("sg")) : "1,000+";
+
+const homeSchema = `<script type="application/ld+json">${JSON.stringify([
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: SITE_NAME,
+    url: `${SITE}/`,
+    inLanguage: "en",
+    publisher: { "@type": "Organization", name: "Public Transport Live", url: APP, logo: `${APP}/assets/icon-512.png` }
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: FAQ.map(([q, a]) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } }))
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    itemListElement: posts.map((p, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE}/${p.slug}`, name: p.title }))
+  }
+]).replace(/</g, "\\u003c")}</script>`;
 
 writeFileSync(join(out, "index.html"), page({
-  title: "Malaysia & Singapore public transport guide",
-  desc: "How to get around Malaysia and Singapore by train and bus: line guides, fares and passes, sights by MRT, Penang, Melaka, Johor Bahru and crossing to Singapore — from the makers of the Public Transport Live tracker.",
+  title: "Malaysia & Singapore public transport guide — trains, buses, fares & sights",
+  desc: "How to get around Malaysia and Singapore by train and bus: KLIA and Changi to the city, Johor Bahru to Singapore, KL and Singapore sights by train, Penang, Melaka, fares and passes — plain-English guides with a free live tracker.",
   canonical: `${SITE}/`,
+  head: homeSchema,
+  image: "photo-kl-lrt",
   body: `<section class="hero"><div class="hero-in">
 <div class="eyebrow">Malaysia · Singapore</div>
-<h1>Get around by train and bus</h1>
-<p>Plain-English guides to the lines, fares and sights — built on the official open-data feeds and paired with a free live tracker that shows every bus and train moving.</p>
-<a class="btn" href="/malaysia">Malaysia guides</a><a class="btn" href="/singapore">Singapore guides</a><a class="btn ghost" href="${APP_REF}">Open the live map</a>
+<h1>Malaysia &amp; Singapore by train and bus</h1>
+<p>Plain-English guides to the lines, fares and sights — checked against the operators, built on the official open-data feeds, and paired with a free live tracker that shows every bus and train moving.</p>
+<label class="gsearch"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="2"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="gq" type="search" placeholder="Search the guides — e.g. Penang, Tourist Pass, Batu Caves" aria-label="Search the guides" autocomplete="off"></label>
+<div class="quick">${QUICK.map(([label, slug]) => `<a href="/${slug}">${esc(label)}</a>`).join("")}</div>
 <div class="chips">
-<span><b>${total("my") + total("sg") ? fmt(total("my") + total("sg")) : "1,000+"}</b> routes tracked</span>
-<span><b>${network.my.length + network.sg.length || 17}</b> networks</span>
+<span><b>${routeTotal}</b> routes in the live tracker</span>
 <span><b>${posts.length}</b> guides</span>
 <span><b>Free</b> · no login</span>
-</div></div></section>
-${countryRow("my")}
-${countryRow("sg")}`
+</div></div>
+<p class="herocredit">Our rendering of the KL rail network · basemap © OpenStreetMap contributors · Protomaps</p></section>
+<p id="gnone" class="lead" hidden>No guide matches that — try a place, a line or a fare word.</p>
+
+<section class="starts" aria-label="Start here">
+${feature("/malaysia", "photo-kl-lrt", "Malaysia", "Kuala Lumpur, Penang, Melaka & beyond", "LRT, MRT, KTM and city buses, the passes worth buying and the sights by train.")}
+${feature("/singapore", "photo-sg-mrt", "Singapore", "The MRT, buses and fares", "Paying by card, the Tourist Pass, and the station and exit for every big sight.")}
+${feature("/johor-bahru-to-singapore", "photo-causeway", "Crossing", "Johor Bahru ↔ Singapore", "The shuttle train, the buses, arrival cards and the RTS Link coming in 2027.")}
+</section>
+
+<div class="cap"><h2>Malaysia</h2><a href="/malaysia">All Malaysia guides →</a></div>
+<div class="grid">${myPosts.map(card).join("")}</div>
+<div class="cap"><h2>Singapore</h2><a href="/singapore">All Singapore guides →</a></div>
+<div class="grid">${sgPosts.map(card).join("")}</div>
+${both.length ? `<div class="cap"><h2>Airports &amp; borders</h2></div><div class="grid">${both.map(card).join("")}</div>` : ""}
+
+<section class="liveband"><div><b>Plan it live</b><span>Every bus and train on one map, a journey planner across both countries, and timetables for ${routeTotal} routes.</span></div><div><a class="btn dark" href="${APP_REF}">Open the live map</a><a class="btn line" href="${APP}/routes">All routes &amp; timetables</a></div></section>
+
+<section class="faq"><h2>Quick answers</h2>
+${FAQ.map(([q, a, slug]) => `<details><summary>${esc(q)}</summary><p>${esc(a)} <a href="/${slug}">Read the guide →</a></p></details>`).join("")}
+</section>
+<script>(()=>{const q=document.getElementById("gq"),none=document.getElementById("gnone");if(!q)return;const cards=[...document.querySelectorAll("a.card")];let t=0;q.addEventListener("input",()=>{const w=q.value.toLowerCase().split(/\\s+/).filter(Boolean);let shown=0;for(const c of cards){const hit=w.every((x)=>c.dataset.s.includes(x));c.hidden=!hit;if(hit)shown++;}document.querySelectorAll(".cap").forEach((cap)=>{const grid=cap.nextElementSibling;cap.hidden=grid&&![...grid.children].some((c)=>!c.hidden);});none.hidden=!w.length||shown>0;clearTimeout(t);if(w.length)t=setTimeout(()=>document.querySelector(".starts").scrollIntoView({behavior:"smooth",block:"start"}),500);});})();</script>`
 }));
 
-const urls = [`${SITE}/`, `${SITE}/malaysia`, `${SITE}/singapore`, ...posts.map((p) => `${SITE}/${p.slug}`)];
+/* Photo credits: every image on the site, with what its licence asks for. */
+const creditRows = Object.entries(CREDITS).map(([name, c]) => `<tr><td><img src="/img/${name}-sm.webp" width="160" height="107" alt="" loading="lazy"></td><td><a href="${c.page}" rel="noopener">${esc(c.title.replace(/\.(jpe?g|png|webp)$/i, ""))}</a><br><small>${esc(c.artist)}</small></td><td><a href="${c.licenseUrl}" rel="noopener license">${esc(c.license)}</a></td><td>${esc(c.modified)}</td></tr>`).join("");
+writeFileSync(join(out, "credits.html"), page({
+  title: "Photo & map credits | Transit Guide",
+  desc: "Sources and licences for the photos, maps and data used in the Public Transport Live travel guides.",
+  canonical: `${SITE}/credits`,
+  body: `<p class="crumbs"><a href="/">Guides</a> › Credits</p>
+<article><h1>Photo &amp; map credits</h1>
+<p>Every photo on this site comes from <a href="https://commons.wikimedia.org" rel="noopener">Wikimedia Commons</a> under an open licence and is used on that licence's terms. We cropped each to 3:2 and resized it; our adaptations of CC BY-SA photos are shared under the same licence.</p>
+<div class="tablewrap"><table class="credits"><tr><th></th><th>Photo &amp; author</th><th>Licence</th><th>Changes</th></tr>${creditRows}</table></div>
+<h2>Maps &amp; data</h2>
+<p>Route lines, stops and timetables come from the official open-data feeds: the Malaysia Open API (Prasarana, KTMB, APAD) and LTA DataMall (Singapore). Street maps are drawn from <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> data (© OpenStreetMap contributors, ODbL) with a <a href="https://protomaps.com" rel="noopener">Protomaps</a> basemap we host ourselves, rendered with MapLibre. The homepage map is our own rendering of the same data.</p>
+<h2>Something of yours?</h2>
+<p>If you think something here is used incorrectly, email <a href="mailto:izzulfitreee@gmail.com">izzulfitreee@gmail.com</a> and we'll fix or remove it.</p></article>`
+}));
+
+writeFileSync(join(out, "404.html"), page({
+  title: "Page not found | Transit Guide",
+  desc: "This page doesn't exist — browse the Malaysia and Singapore public transport guides instead.",
+  canonical: `${SITE}/`,
+  body: `<article><h1>That page isn't here</h1><p class="lead">It may have moved. Try the <a href="/malaysia">Malaysia</a> or <a href="/singapore">Singapore</a> guides, or <a href="/">all guides</a>.</p></article>`
+}).replace('<meta name="robots" content="index, follow, max-image-preview:large">', '<meta name="robots" content="noindex">'));
+
+/* Sitemap with last-modified dates and each page's photo, for image search. */
+const urlEntry = (loc, lastmod, image, caption) => `<url><loc>${loc}</loc><lastmod>${lastmod}</lastmod>${image ? `<image:image><image:loc>${SITE}/img/${image}.webp</image:loc>${caption ? `<image:caption>${esc(caption)}</image:caption>` : ""}</image:image>` : ""}</url>`;
 writeFileSync(join(out, "sitemap.xml"),
-  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-  urls.map((u) => `<url><loc>${u}</loc></url>`).join("\n") + `\n</urlset>`);
+  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n` +
+  [
+    urlEntry(`${SITE}/`, stamp, "hero-network"),
+    urlEntry(`${SITE}/malaysia`, stamp, "photo-kl-lrt"),
+    urlEntry(`${SITE}/singapore`, stamp, "photo-sg-mrt"),
+    ...posts.map((p) => urlEntry(`${SITE}/${p.slug}`, p.updated || p.date, imageOf(p), p.title)),
+    urlEntry(`${SITE}/credits`, stamp)
+  ].join("\n") + `\n</urlset>`);
 
 writeFileSync(join(out, "rss.xml"),
   `<?xml version="1.0"?><rss version="2.0"><channel><title>Malaysia &amp; Singapore Transit Guide</title><link>${SITE}</link><description>Public transport guides for Malaysia and Singapore</description>` +
@@ -470,6 +666,11 @@ ${posts.filter((p) => inCountry(p, "sg")).map((p) => `- [${p.title}](${SITE}/${p
 - [Public Transport Live](https://public.kaynx1.com/): free live tracker, no ads on the live map, no login
 - [All routes with timetables](https://public.kaynx1.com/routes)
 `);
+
+/* IndexNow (Bing, Yandex, Naver, Seznam): the key file proves we own the
+   host; indexnow.mjs pings the sitemap's URLs after a deploy. */
+const INDEXNOW_KEY = readFileSync(join(here, "indexnow-key.txt"), "utf-8").trim();
+writeFileSync(join(out, `${INDEXNOW_KEY}.txt`), INDEXNOW_KEY);
 
 writeFileSync(join(out, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\n`);
 writeFileSync(join(out, "_headers"), `/*\n  Cache-Control: public, max-age=3600\n  X-Content-Type-Options: nosniff\n`);

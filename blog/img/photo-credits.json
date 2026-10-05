@@ -1,27 +1,122 @@
 {
- "photo-kl-lrt": {
-  "artist": "Vincent60030",
-  "license": "CC BY-SA 4.0",
-  "page": "https://commons.wikimedia.org/wiki/File:Lembah_Subang_2_trains.jpg"
+ "photo-penang-cat": {
+  "title": "Penang Free CAT Bus with Visit Malaysia 2026 wrapping approaching Komtar II station.jpg",
+  "artist": "Weareblahs",
+  "license": "CC BY 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Penang_Free_CAT_Bus_with_Visit_Malaysia_2026_wrapping_approaching_Komtar_II_station.jpg",
+  "modified": "cropped to 3:2 and resized"
  },
- "photo-sg-mrt": {
-  "artist": "zhenkang",
-  "license": "CC BY-SA 4.0",
-  "page": "https://commons.wikimedia.org/wiki/File:NS24_Dhoby_Ghaut_MRT_Platform_A_with_train.jpg"
+ "photo-melaka-sentral": {
+  "title": "Local bus bays at Melaka Sentral in Melaka, Malaysia.jpg",
+  "artist": "philip.mallis",
+  "license": "CC BY-SA 2.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Local_bus_bays_at_Melaka_Sentral_in_Melaka,_Malaysia.jpg",
+  "modified": "cropped to 3:2 and resized"
  },
- "photo-kl-bus": {
+ "photo-causeway": {
+  "title": "Singapore-Johor Causeway.jpg",
+  "artist": "Img by Calvin Teo",
+  "license": "CC BY-SA 3.0",
+  "licenseUrl": "http://creativecommons.org/licenses/by-sa/3.0/",
+  "page": "https://commons.wikimedia.org/wiki/File:Singapore-Johor_Causeway.jpg",
+  "modified": "cropped to 3:2 and resized"
+ },
+ "photo-ets": {
+  "title": "ETS 5 (cropped).jpg",
+  "artist": "Slleong",
+  "license": "CC BY-SA 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:ETS_5_(cropped).jpg",
+  "modified": "cropped to 3:2 and resized"
+ },
+ "photo-basmy": {
+  "title": "BAS.MY Kota Setar travelling along Lebuhraya Darul Aman.jpg",
+  "artist": "Lawantetaplawan",
+  "license": "CC BY 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:BAS.MY_Kota_Setar_travelling_along_Lebuhraya_Darul_Aman.jpg",
+  "modified": "cropped to 3:2 and resized"
+ },
+ "photo-batu-caves": {
+  "title": "KTM Komuter Batu Caves Station Railway Tracks and Festival Market Canopies View (250212).jpg",
   "artist": "*angys*",
   "license": "CC BY-SA 4.0",
-  "page": "https://commons.wikimedia.org/wiki/File:Rapid_KL_851_(JMX_6717)_at_Pasar_Seni_bus_hub_(250630).jpg"
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:KTM_Komuter_Batu_Caves_Station_Railway_Tracks_and_Festival_Market_Canopies_View_(250212).jpg",
+  "modified": "cropped to 3:2 and resized"
  },
- "photo-ktm": {
-  "artist": "*angys*",
-  "license": "CC BY-SA 4.0",
-  "page": "https://commons.wikimedia.org/wiki/File:KTM_Komuter_Class_92_(SCS10)_at_Batu_Caves_Station_(250212).jpg"
+ "photo-sg-bus": {
+  "title": "(SGP-Singapore) SBS Transit SBS6667M 131 2024-04-19.jpg",
+  "artist": "S5A-0043",
+  "license": "CC BY 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:(SGP-Singapore)_SBS_Transit_SBS6667M_131_2024-04-19.jpg",
+  "modified": "cropped to 3:2 and resized"
  },
- "photo-changi": {
+ "photo-gardens-mrt": {
+  "title": "TE22 Gardens by the Bay MRT Exit 1 20221225 145629.jpg",
   "artist": "ZKang123",
   "license": "CC BY-SA 4.0",
-  "page": "https://commons.wikimedia.org/wiki/File:CG2_Changi_Airport_MRT_Platform_B_20260418_193610.jpg"
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:TE22_Gardens_by_the_Bay_MRT_Exit_1_20221225_145629.jpg",
+  "modified": "cropped to 3:2 and resized"
+ },
+ "photo-sg-faregates": {
+  "title": "Dhoby Ghaut Station SG50 Free Travel.jpg",
+  "artist": "Lyg 2001",
+  "license": "CC BY-SA 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Dhoby_Ghaut_Station_SG50_Free_Travel.jpg",
+  "modified": "cropped to 3:2 and resized"
+ },
+ "photo-kl-lrt": {
+  "title": "Lembah_Subang_2_trains.jpg",
+  "artist": "Vincent60030",
+  "license": "CC BY-SA 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Lembah_Subang_2_trains.jpg",
+  "modified": "cropped to 3:2 and resized"
+ },
+ "photo-sg-mrt": {
+  "title": "NS24_Dhoby_Ghaut_MRT_Platform_A_with_train.jpg",
+  "artist": "zhenkang",
+  "license": "CC BY-SA 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:NS24_Dhoby_Ghaut_MRT_Platform_A_with_train.jpg",
+  "modified": "cropped to 3:2 and resized"
+ },
+ "photo-kl-bus": {
+  "title": "Rapid_KL_851_(JMX_6717)_at_Pasar_Seni_bus_hub_(250630).jpg",
+  "artist": "*angys*",
+  "license": "CC BY-SA 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Rapid_KL_851_(JMX_6717)_at_Pasar_Seni_bus_hub_(250630).jpg",
+  "modified": "cropped to 3:2 and resized"
+ },
+ "photo-ktm": {
+  "title": "KTM_Komuter_Class_92_(SCS10)_at_Batu_Caves_Station_(250212).jpg",
+  "artist": "*angys*",
+  "license": "CC BY-SA 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:KTM_Komuter_Class_92_(SCS10)_at_Batu_Caves_Station_(250212).jpg",
+  "modified": "cropped to 3:2 and resized"
+ },
+ "photo-changi": {
+  "title": "CG2_Changi_Airport_MRT_Platform_B_20260418_193610.jpg",
+  "artist": "ZKang123",
+  "license": "CC BY-SA 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:CG2_Changi_Airport_MRT_Platform_B_20260418_193610.jpg",
+  "modified": "cropped to 3:2 and resized"
+ },
+ "photo-kl-faregates": {
+  "title": "KJ Line Pasar Seni Station KTM Link 8.jpg",
+  "artist": "Slleong",
+  "license": "CC0",
+  "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+  "page": "https://commons.wikimedia.org/wiki/File:KJ_Line_Pasar_Seni_Station_KTM_Link_8.jpg",
+  "modified": "cropped to 3:2 and resized"
  }
 }

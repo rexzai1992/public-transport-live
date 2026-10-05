@@ -429,6 +429,21 @@ app.use(seoRouter);
 /* Leaflet and the icons change roughly never; letting the browser hold them
    for a week removes a handful of ~200ms revalidation round trips per load.
    Everything else keeps the default (revalidate every time) so deploys land. */
+/* Basemap for route maps: an OpenStreetMap extract of Malaysia + Singapore
+   (Protomaps PMTiles, ~300 MB) in data/tiles/, read by the browser with
+   HTTP range requests. Self-hosted so no third-party tile licence applies;
+   open to other origins because the travel guide (travel-guide.kaynx1.com)
+   draws its maps from the same file. Rebuild: see docs/basemap.md. */
+app.use(
+  "/tiles",
+  (_req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Expose-Headers", "Content-Length, Content-Range, ETag");
+    next();
+  },
+  express.static(path.join(process.cwd(), "data", "tiles"), { maxAge: "1d", fallthrough: false })
+);
+
 app.use(
   express.static(path.join(process.cwd(), "public"), {
     setHeaders: (res, filePath) => {
