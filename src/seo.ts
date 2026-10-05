@@ -110,6 +110,33 @@ function guidesFor(feedId: FeedId): string[] {
   return [];
 }
 
+/* Google AdSense — on the timetable pages (/routes and /route/...) only. The
+   live map and the Android app carry no ads; the homepage has just the
+   ownership <meta> (public/index.html). Auto ads are switched on in the AdSense
+   dashboard and can only appear where this script loads. The three fixed spots
+   need display ad-unit ids: ADSENSE_SLOTS="slot1,slot2,slot3" (one id is
+   reused for all three). Without them the spots render nothing. */
+const ADSENSE_CLIENT = process.env.ADSENSE_CLIENT?.trim() || "ca-pub-4843649883093955";
+const ADSENSE_SLOTS = (process.env.ADSENSE_SLOTS ?? "").split(",").map((slot) => slot.trim()).filter((slot) => /^\d+$/.test(slot));
+
+const AD_HEAD = `<meta name="google-adsense-account" content="${ADSENSE_CLIENT}">
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}" crossorigin="anonymous"></script>
+<style>
+.ad{margin:28px 0;min-height:110px}
+.ad-label{color:var(--ink3);display:block;font-size:10.5px;font-weight:600;letter-spacing:.08em;margin-bottom:6px;text-transform:uppercase}
+.ad:has(ins[data-ad-status="unfilled"]){display:none}
+ins.adsbygoogle[data-ad-status="unfilled"]{display:none!important}
+</style>`;
+
+/** One fixed ad spot (0, 1 or 2), or nothing until ad-unit ids are set. */
+function adSpot(position: number): string {
+  if (!ADSENSE_SLOTS.length) return "";
+  const slot = ADSENSE_SLOTS[position % ADSENSE_SLOTS.length];
+  return `<aside class="ad" aria-label="Advertisement"><span class="ad-label">Advertisement</span><ins class="adsbygoogle" style="display:block" data-ad-client="${ADSENSE_CLIENT}" data-ad-slot="${slot}" data-ad-format="auto" data-full-width-responsive="true"></ins></aside>`;
+}
+
+const AD_FOOT = `<script>document.querySelectorAll("ins.adsbygoogle").forEach(function(){(window.adsbygoogle=window.adsbygoogle||[]).push({});});</script>`;
+
 const CREDITS = `Timetables and live positions: Malaysia Open API (Prasarana, KTMB, APAD) and LTA DataMall.
 Map and place search data &copy; <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> contributors.`;
 
@@ -335,7 +362,7 @@ seoRouter.get("/routes", async (_req, res, next) => {
 <link rel="canonical" href="https://public.kaynx1.com/routes">
 <meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#080808" media="(prefers-color-scheme: dark)">
 <script type="application/ld+json">${schema}</script>
-${PAGE_STYLE}${ROUTES_PAGE_STYLE}</head><body>
+${PAGE_STYLE}${ROUTES_PAGE_STYLE}${AD_HEAD}</head><body>
 ${topBar("routes")}
 <main class="wide">
 <p class="crumbs"><a href="/">Live map</a> › All routes</p>
@@ -359,8 +386,10 @@ ${topBar("routes")}
 <div id="browse">
 <nav class="jump" aria-label="Networks">${jump.my.map((chip) => chip.replace("<a ", '<a data-c="my" ')).join("")}${jump.sg.map((chip) => chip.replace("<a ", '<a data-c="sg" ')).join("")}</nav>
 ${countryBlock("my", "Malaysia")}
+${adSpot(0)}
 ${countryBlock("sg", "Singapore")}
 </div>
+${adSpot(1)}
 
 <h2>Popular journeys</h2>
 <p class="sub">Step-by-step directions from the live journey planner.</p>
@@ -369,11 +398,12 @@ ${countryBlock("sg", "Singapore")}
 <h2>Travel guides</h2>
 <p class="sub">Fares, passes, sights by train and how each network works.</p>
 <div class="trips"><a href="${TRAVEL_GUIDE}/malaysia" data-c="my"><span>Malaysia</span><span class="arr">\u2192</span><span>KL, Penang, Melaka, Johor Bahru</span></a><a href="${TRAVEL_GUIDE}/singapore" data-c="sg"><span>Singapore</span><span class="arr">\u2192</span><span>MRT, buses, fares, sights</span></a></div>
-
+${adSpot(2)}
 <p class="foot"><a href="/">Public Transport Live</a> · <a href="/faq">FAQ</a> · <a href="/terms.html">Terms &amp; Privacy</a><br>${CREDITS}</p>
 </main>
 <script src="/search-core.js"></script>
 <script>${ROUTES_PAGE_SCRIPT}</script>
+${AD_FOOT}
 </body></html>`;
 
     routesPageCache = { expiresAt: Date.now() + 60 * 60 * 1000, html };
@@ -951,7 +981,7 @@ seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
         { "@type": "ListItem", position: 2, name: label, item: `https://public.kaynx1.com/routes#${feedId}` },
         { "@type": "ListItem", position: 3, name: code }
       ]
-    }).replace(/</g, "\\u003c")}</script>${PAGE_STYLE}${ROUTE_PAGE_STYLE}</head><body>${topBar()}<main class="wide route-page">
+    }).replace(/</g, "\\u003c")}</script>${PAGE_STYLE}${ROUTE_PAGE_STYLE}${AD_HEAD}</head><body>${topBar()}<main class="wide route-page">
 <p class="crumbs"><a href="/routes">All routes</a> \u203a <a href="/routes#${feedId}">${esc(label)}</a> \u203a ${esc(code)}</p>
 <div class="rtop${mapHtml ? "" : " nomap"}">
 <header class="rhead">
@@ -965,13 +995,17 @@ seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
 </header>
 ${mapHtml}
 </div>
+${adSpot(0)}
 ${tabs}
 ${directions.map((d) => d.html).join("") || "<p>Stop list unavailable right now.</p>"}
+${adSpot(1)}
 ${guideBlock}
+${adSpot(2)}
 <p class="note">Times are today\u2019s published schedule from the operator\u2019s official feed. Trains and buses can run early or late${def.realtimeUrl ? " \u2014 the live map shows where they actually are" : ""}.</p>
 <p class="foot"><a href="/routes">All routes</a> · <a href="/">Public Transport Live</a> · <a href="/terms.html">Terms</a><br>${CREDITS}</p>
 </main>
 <script>${ROUTE_PAGE_SCRIPT}</script>
+${AD_FOOT}
 </body></html>`);
   } catch (error) {
     next(error);
@@ -1150,7 +1184,7 @@ const FAQS: [string, string][] = [
   ["How can I track Rapid KL buses in real time?",
    "Public Transport Live (public.kaynx1.com) shows the actual GPS position of every Rapid KL bus, MRT feeder bus and Rapid Penang bus on a live map, refreshed every 30 seconds from Prasarana's official open-data feed. Open the app, pick a route, and watch the bus move."],
   ["Is there a free app for KL public transport without ads?",
-   "Yes — Public Transport Live is completely free with no advertising, no account and no tracking. It runs on Malaysian and Singaporean government open data, so there is nothing to pay for and nothing being sold."],
+   "Yes — the Public Transport Live map and Android app are completely free, with no advertising, no account and no tracking. (The route timetable pages on the website carry Google ads, which help keep the service free.) It runs on Malaysian and Singaporean government open data, so there is nothing to pay for and nothing being sold."],
   ["Does it cover Singapore buses and MRT?",
    "Yes. Every Singapore public bus shows live arrival times including how crowded the bus is (seats available, standing, or crowded), and MRT lines show real-time platform crowding from LTA. A journey planner works across both buses and trains."],
   ["Can I plan a journey with transfers?",
