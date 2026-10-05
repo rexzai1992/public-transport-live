@@ -557,6 +557,58 @@ const ROUTES_PAGE_SCRIPT = `
 })();
 `;
 
+/* Parts of the day a passenger plans around, in minutes after midnight. A
+   train every 90 seconds is "every 1–2 min in the morning peak", not forty
+   numbers in an hour row; that table stays, folded, for whoever wants it. */
+const DAY_PARTS: { name: string; from: number; to: number }[] = [
+  { name: "Early morning", from: 0, to: 420 },
+  { name: "Morning peak", from: 420, to: 570 },
+  { name: "Daytime", from: 570, to: 990 },
+  { name: "Evening peak", from: 990, to: 1170 },
+  { name: "Night", from: 1170, to: 3000 }
+];
+
+type Frequency = { name: string; span: string; text: string; detail?: string };
+
+/** "Every 2–3 min", or the actual times when a service is rare. */
+function frequencyBands(times: number[]): Frequency[] {
+  const bands: Frequency[] = [];
+  for (const part of DAY_PARTS) {
+    const inPart = times.filter((t) => t >= part.from && t < part.to);
+    if (!inPart.length) continue;
+    const span = `${formatGtfsMinutes(inPart[0])}\u2013${formatGtfsMinutes(inPart[inPart.length - 1])}`;
+    // The average gap, not the median: a bus alternating 15 and 45 min is a
+    // 30-minute service, however the middle gap happens to fall.
+    const typical = inPart.length > 1 ? (inPart[inPart.length - 1] - inPart[0]) / (inPart.length - 1) : Infinity;
+    // Every 20 min or rarer, "every 15–45 min" helps nobody: list the times.
+    if (inPart.length <= 2 || typical >= 20) {
+      const list = inPart.slice(0, 12).map(formatGtfsMinutes).join(" \u00b7 ");
+      bands.push({
+        name: part.name,
+        span,
+        text: `${inPart.length} departure${inPart.length === 1 ? "" : "s"}`,
+        detail: inPart.length > 12 ? `${list} +${inPart.length - 12} more` : list
+      });
+      continue;
+    }
+    /* From the average too: percentiles turned bunched buses and short
+       turns into "every 1–12 min", which reads as chaos. */
+    if (typical >= 10) {
+      bands.push({ name: part.name, span, text: `About every ${Math.round(typical)} min` });
+      continue;
+    }
+    const lo = Math.max(1, Math.floor(typical));
+    const hi = Math.max(lo, Math.ceil(typical));
+    bands.push({ name: part.name, span, text: lo === hi ? `Every ${lo} min` : `Every ${lo}\u2013${hi} min` });
+  }
+  return bands;
+}
+
+function hhmmToMinutes(value?: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})/.exec(value ?? "");
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
 seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
   try {
     const feedId = feedIdOf(req.params.feedId);
@@ -571,76 +623,110 @@ seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
       return;
     }
 
-    const label = feedDefinition(feedId).label;
-    const view = withTerminals(feed, route, routeDisplay(route, label, routeModeOf(feedId, route) === "rail"));
-    const code = view.code;
-    const mode = feedDefinition(feedId).mode === "rail" ? "train" : "bus";
-    const patterns = findRoutePatterns(feed, route.routeId);
-    // Rail keeps its line colour; buses are drawn in ink, like the app.
+    const def = feedDefinition(feedId);
+    const label = def.label;
     const isRail = routeModeOf(feedId, route) === "rail";
+    const view = withTerminals(feed, route, routeDisplay(route, label, isRail));
+    const code = view.code;
+    const mode = isRail ? "train" : "bus";
+    const patterns = findRoutePatterns(feed, route.routeId).filter((pattern) => pattern.stops.length);
+    // Rail keeps its line colour; buses are drawn in ink, like the app.
     const lineColor = isRail && route.color ? `#${route.color}` : "";
     const badgeStyle = lineColor ? ` style="--bc:${lineColor};--bt:#${esc(route.textColor || "fff")}"` : "";
 
-    /* The real timetable, from the same schedule expansion the app uses:
-       departures at each direction's origin stop, printed-timetable style. */
+    /* Departures at each direction's first stop, from the same schedule
+       expansion the app uses (today's service). */
     const clock = malaysiaClock();
     const schedule = buildRouteStopSchedule(feed, route.routeId, clock);
+    const stopName = (name: string) => tidyName(name);
 
-    function originTimetable(originStopId: string): { html: string; first: string; last: string; gap: number | null } {
-      const times = (schedule.get(originStopId) ?? []).map((entry) => entry.minutes).sort((a, b) => a - b);
-      if (!times.length) return { html: "", first: "\u2014", last: "\u2014", gap: null };
+    const directions = patterns.map((pattern, index) => {
+      const stops = pattern.stops;
+      const origin = stops[0];
+      /* Rapid Rail writes headsigns as "From Gombak to Putra Heights"; after
+         "Towards" only the part past "to" belongs (as in journey.ts). */
+      /* A headsign that only repeats the route ("R10") says nothing about the
+         direction; the last stop does. */
+      const sign = pattern.headsign?.replace(/^\s*from\s+.+?\s+to\s+/i, "").trim() ?? "";
+      const repeatsRoute = [code, route.shortName, route.longName, route.routeId]
+        .some((name) => name && name.trim().toLowerCase() === sign.toLowerCase());
+      const towards = tidyName(sign && !repeatsRoute ? sign : stops[stops.length - 1].name);
+      const times = [...new Set((schedule.get(origin.stopId) ?? []).map((entry) => entry.minutes))].sort((a, b) => a - b);
+
+      // Minutes from the first stop, from the representative trip's times.
+      const start = hhmmToMinutes(origin.scheduledDeparture ?? origin.scheduledArrival);
+      const offsets = stops.map((stop) => {
+        const at = hhmmToMinutes(stop.scheduledArrival ?? stop.scheduledDeparture);
+        return start !== null && at !== null ? (at - start + 1440) % 1440 : null;
+      });
+      const endToEnd = offsets[offsets.length - 1];
+
+      const stats = [
+        times.length ? `<div class="stat"><span>First</span><b>${formatGtfsMinutes(times[0])}</b></div>` : "",
+        times.length ? `<div class="stat"><span>Last</span><b>${formatGtfsMinutes(times[times.length - 1])}</b></div>` : "",
+        endToEnd ? `<div class="stat"><span>End to end</span><b>~${endToEnd} min</b></div>` : "",
+        `<div class="stat"><span>Stops</span><b>${stops.length}</b></div>`
+      ].join("");
+
+      const bands = frequencyBands(times);
+      const bandRows = bands
+        .map((band) => `<tr><th scope="row"><span class="pn">${band.name}</span><small>${band.span}</small></th><td><b>${band.text}</b>${band.detail ? `<small>${band.detail}</small>` : ""}</td></tr>`)
+        .join("");
+
       const byHour = new Map<number, number[]>();
       for (const minutes of times) {
-        const hour = Math.floor((((minutes % 1440) + 1440) % 1440) / 60);
+        const hour = Math.floor(minutes / 60);
         const bucket = byHour.get(hour);
         if (bucket) bucket.push(minutes % 60);
         else byHour.set(hour, [minutes % 60]);
       }
-      const gaps = times.slice(1).map((t, i) => t - times[i]).filter((g) => g > 0 && g < 180).sort((a, b) => a - b);
-      const gap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : null;
-      const rows = [...byHour.entries()]
+      const hourRows = [...byHour.entries()]
         .sort((a, b) => a[0] - b[0])
-        .map(([hour, mins]) => `<tr><td>${String(hour).padStart(2, "0")}</td><td>${[...new Set(mins)].sort((a, b) => a - b).map((m) => String(m).padStart(2, "0")).join(" \u00b7 ")}</td></tr>`)
+        .map(([hour, mins]) => `<div class="hr" data-h="${hour}"><span class="h">${String(hour % 24).padStart(2, "0")}</span><span class="m">${mins.map((m) => `<i>${String(m).padStart(2, "0")}</i>`).join("")}</span></div>`)
         .join("");
+
+      const stopRows = stops
+        .map((stop, i) => `<li><span class="sn">${esc(stopName(stop.name))}</span>${offsets[i] !== null && i > 0 ? `<span class="so">+${offsets[i]} min</span>` : ""}</li>`)
+        .join("");
+
       return {
-        html: `<table class="tt"><tr><th>Hour</th><th>Departure minutes</th></tr>${rows}</table>`,
-        first: formatGtfsMinutes(times[0]),
-        last: formatGtfsMinutes(times[times.length - 1]),
-        gap
+        tab: `Towards ${esc(towards)}`,
+        html: `<section class="dir" data-d="${index}" aria-label="Towards ${esc(towards)}">
+<div class="dir-main">
+  <h2 class="dir-title">Towards ${esc(towards)}</h2>
+  ${times.length ? `<div class="next" data-times="${times.join(",")}">
+    <div class="next-label">Next ${mode} from <b>${esc(stopName(origin.name))}</b></div>
+    <div class="next-big" aria-live="polite">${formatGtfsMinutes(times[0])} <small>first today</small></div>
+    <div class="next-more"></div>
+  </div>` : `<div class="next"><div class="next-label">No scheduled departures today.</div></div>`}
+  <div class="stats">${stats}</div>
+  ${bands.length ? `<h3>How often</h3><table class="freq">${bandRows}</table>` : ""}
+  ${times.length ? `<details class="full"><summary>Full timetable from ${esc(stopName(origin.name))} <span>${times.length} departures</span></summary>
+    <div class="hours">${hourRows}</div></details>` : ""}
+</div>
+<aside class="dir-stops">
+  <h3>${stops.length} stops</h3>
+  <ol class="line"${lineColor ? ` style="--lc:${lineColor}"` : ""}>${stopRows}</ol>
+</aside>
+</section>`
       };
-    }
+    });
 
-    const directions = patterns
-      .map((pattern) => {
-        const stops = pattern.stops;
-        if (!stops.length) return "";
-        /* Rapid Rail writes headsigns as "From Gombak to Putra Heights"; after
-           "Towards" only the part past "to" belongs (as in journey.ts). */
-        const towards = pattern.headsign?.replace(/^\s*from\s+.+?\s+to\s+/i, "").trim();
-        const heading = towards
-          ? `Towards ${esc(tidyName(towards))}`
-          : `${esc(tidyName(stops[0].name))} \u2192 ${esc(tidyName(stops[stops.length - 1].name))}`;
-        const tt = originTimetable(stops[0].stopId);
-        const chips = `<div class="statrow">
-<span><b>${stops.length}</b> stops</span>
-<span>first <b>${tt.first}</b></span><span>last <b>${tt.last}</b></span>
-${tt.gap ? `<span>every <b>~${tt.gap} min</b></span>` : ""}
-</div>`;
-        return `<h2>${heading}</h2>${chips}
-${tt.html ? `<h3 style="font-size:14px;margin:0 0 4px">Departures from ${esc(stops[0].name)} (scheduled)</h3>${tt.html}` : ""}
-<ul class="rail-list"${lineColor ? ` style="--lc:${lineColor}"` : ""}>${stops.map((stop) => `<li>${esc(stop.name)}</li>`).join("")}</ul>`;
-      })
-      .join("");
+    const tabs = directions.length > 1
+      ? `<div class="dtabs" role="tablist">${directions.map((d, i) => `<button type="button" role="tab" data-d="${i}" aria-selected="${i === 0}">${d.tab}</button>`).join("")}</div>`
+      : "";
 
-    const title = `${code} ${mode} route — stops & live tracker | ${label}`;
+    const title = `${code} ${mode} route — stops, timetable & live tracker | ${label}`;
     const appLink = `/?area=${encodeURIComponent(feedId)}&route=${encodeURIComponent(route.routeId)}`;
     const stopCount = patterns[0]?.stops.length ?? 0;
+    const firstBands = patterns[0] ? frequencyBands([...new Set((schedule.get(patterns[0].stops[0].stopId) ?? []).map((e) => e.minutes))].sort((a, b) => a - b)) : [];
+    const summary = firstBands.find((band) => band.name === "Daytime")?.text ?? firstBands[0]?.text;
 
     res.setHeader("Cache-Control", "public, max-age=3600");
     res.type("html").send(`<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
-<meta name="description" content="${esc(`${label} ${mode} ${code}${route.longName ? ` (${route.longName})` : ""}: all ${stopCount} stops, route map and real-time ${mode} positions. Track it live, free.`)}">
+<meta name="description" content="${esc(`${label} ${mode} ${code}${view.title ? ` — ${view.title}${view.ends ? ` ${view.ends}` : ""}` : ""}: ${stopCount} stops${summary ? `, ${summary.toLowerCase()} during the day` : ""}, first and last ${mode}, full timetable and live tracking. Free.`)}">
 <link rel="canonical" href="https://public.kaynx1.com/route/${feedId}/${encodeURIComponent(route.routeId)}">
 <script type="application/ld+json">${JSON.stringify({
       "@context": "https://schema.org",
@@ -650,19 +736,164 @@ ${tt.html ? `<h3 style="font-size:14px;margin:0 0 4px">Departures from ${esc(sto
         { "@type": "ListItem", position: 2, name: label, item: `https://public.kaynx1.com/routes#${feedId}` },
         { "@type": "ListItem", position: 3, name: code }
       ]
-    }).replace(/</g, "\\u003c")}</script>${PAGE_STYLE}</head><body>${topBar()}<main>
+    }).replace(/</g, "\\u003c")}</script>${PAGE_STYLE}${ROUTE_PAGE_STYLE}</head><body>${topBar()}<main class="wide route-page">
 <p class="crumbs"><a href="/routes">All routes</a> \u203a <a href="/routes#${feedId}">${esc(label)}</a> \u203a ${esc(code)}</p>
-<h1><span class="badge"${badgeStyle}>${esc(code)}</span>${esc(view.ends.startsWith("\u2192") ? `${view.title} ${view.ends}` : view.title)}</h1>
-${view.ends && !view.ends.startsWith("\u2192") ? `<p class="sub" style="color:var(--ink);font-size:15px;font-weight:500;margin:-2px 0 6px">${esc(view.ends)}</p>` : ""}
-<p class="sub">${esc(label)} \u00b7 scheduled times below come from the official feed \u2014 live positions and real-time estimates are in the app</p>
-<a class="cta" href="${esc(appLink)}">Track ${esc(code)} live on the map</a>
-${directions || "<p>Stop list unavailable right now.</p>"}
-<p class="foot"><a href="/routes">All routes</a> · <a href="/">Public Transport Live</a> · times are estimates — <a href="/terms.html">Terms</a><br>${CREDITS}</p>
-</main></body></html>`);
+<header class="rhead">
+  <h1><span class="badge"${badgeStyle}>${esc(code)}</span>${esc(view.ends.startsWith("\u2192") ? `${view.title} ${view.ends}` : view.title)}</h1>
+  ${view.ends && !view.ends.startsWith("\u2192") ? `<p class="rends">${esc(view.ends)}</p>` : ""}
+  <p class="sub">${esc(label)} \u00b7 ${def.realtimeUrl ? `<span class="live">Live positions</span>` : "Timetable only \u2014 this operator publishes no live positions"}</p>
+  <a class="cta" href="${esc(appLink)}">${def.realtimeUrl ? `Track ${esc(code)} live on the map` : `Open ${esc(code)} on the map`}</a>
+</header>
+${tabs}
+${directions.map((d) => d.html).join("") || "<p>Stop list unavailable right now.</p>"}
+<p class="note">Times are today\u2019s published schedule from the operator\u2019s official feed. Trains and buses can run early or late${def.realtimeUrl ? " \u2014 the live map shows where they actually are" : ""}.</p>
+<p class="foot"><a href="/routes">All routes</a> · <a href="/">Public Transport Live</a> · <a href="/terms.html">Terms</a><br>${CREDITS}</p>
+</main>
+<script>${ROUTE_PAGE_SCRIPT}</script>
+</body></html>`);
   } catch (error) {
     next(error);
   }
 });
+
+const ROUTE_PAGE_STYLE = `<style>
+.route-page{max-width:1120px}
+.rhead h1{font-size:30px}
+.rends{color:var(--ink);font-size:16px;font-weight:500;margin:0 0 6px}
+.rhead .sub{margin-bottom:6px}
+.live{border:1px solid var(--rule);border-radius:999px;color:var(--ink2);font-size:12px;font-weight:600;padding:1px 9px}
+.live::before{background:var(--live);border-radius:50%;content:"";display:inline-block;height:6px;margin-right:6px;vertical-align:1px;width:6px}
+.dtabs{background:var(--card);border:1px solid var(--rule);border-radius:12px;display:inline-flex;flex-wrap:wrap;gap:3px;margin:4px 0 6px;padding:3px}
+.dtabs button{background:transparent;border:0;border-radius:9px;color:var(--ink2);cursor:pointer;font:500 14px Inter,sans-serif;padding:9px 14px}
+.dtabs button[aria-selected="true"]{background:var(--inv);color:var(--invink)}
+.tabbed .dir:not(.on){display:none}
+.tabbed .dir-title{display:none}
+.dir{display:grid;gap:20px 36px;grid-template-columns:minmax(0,1fr) 340px;align-items:start;padding:14px 0 10px}
+.dir+.dir{border-top:1px solid var(--rule)}
+.tabbed .dir+.dir{border-top:0}
+.dir-title{font-size:18px;margin:0 0 12px}
+.next{background:var(--raised);border:1px solid var(--rule);border-radius:16px;padding:18px 20px}
+.next-label{color:var(--ink2);font-size:13.5px}
+.next-label b{color:var(--ink);font-weight:600}
+.next-big{font-size:38px;font-variant-numeric:tabular-nums;font-weight:700;letter-spacing:-.03em;line-height:1.15;margin:4px 0 2px}
+.next-big small{color:var(--ink2);font-size:15px;font-weight:500;letter-spacing:0;margin-left:6px}
+.next-more{color:var(--ink2);display:flex;flex-wrap:wrap;font-size:14px;font-variant-numeric:tabular-nums;gap:6px 14px}
+.next-more span b{color:var(--ink);font-weight:600}
+.stats{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));margin:12px 0 4px}
+.stat{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:10px 14px}
+.stat span{color:var(--ink3);display:block;font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.stat b{font-size:18px;font-variant-numeric:tabular-nums;font-weight:650}
+.dir h3{font-size:15px;margin:22px 0 8px}
+.freq{background:var(--card);border:1px solid var(--rule);border-collapse:separate;border-radius:12px;border-spacing:0;overflow:hidden;width:100%}
+.freq th,.freq td{border-top:1px solid var(--rule);padding:11px 16px;text-align:left;vertical-align:top}
+.freq tr:first-child th,.freq tr:first-child td{border-top:0}
+.freq th{font-size:14px;font-weight:600;width:42%}
+.freq td b{font-size:14.5px;font-weight:600}
+.freq small{color:var(--ink3);display:block;font-size:12px;font-variant-numeric:tabular-nums;font-weight:500;margin-top:1px}
+.freq tr.now th,.freq tr.now td{background:var(--hover)}
+.freq tr.now .pn::after{background:var(--inv);border-radius:999px;color:var(--invink);content:"Now";font-size:10px;font-weight:700;margin-left:8px;padding:1px 7px;vertical-align:1px}
+.full{background:var(--card);border:1px solid var(--rule);border-radius:12px;margin-top:14px}
+.full summary{cursor:pointer;font-size:14px;font-weight:600;list-style:none;padding:13px 16px}
+.full summary::-webkit-details-marker{display:none}
+.full summary::before{content:"\\25B8";display:inline-block;margin-right:8px;transition:transform .15s}
+.full[open] summary::before{transform:rotate(90deg)}
+.full summary span{color:var(--ink3);font-weight:500;margin-left:6px}
+.hours{border-top:1px solid var(--rule);padding:6px 10px 12px}
+.hr{align-items:baseline;border-radius:8px;display:grid;gap:10px;grid-template-columns:34px 1fr;padding:6px 6px}
+.hr.now{background:var(--hover)}
+.hr .h{color:var(--ink2);font-size:13px;font-variant-numeric:tabular-nums;font-weight:700}
+.hr .m{display:flex;flex-wrap:wrap;gap:2px 0}
+.hr i{color:var(--ink);font-size:13px;font-style:normal;font-variant-numeric:tabular-nums;width:2.6em}
+.hr i.past{color:var(--ink3)}
+.dir-stops{background:var(--card);border:1px solid var(--rule);border-radius:16px;max-height:calc(100vh - 90px);overflow:auto;padding:14px 16px;position:sticky;top:70px}
+.dir-stops h3{font-size:13px;color:var(--ink3);letter-spacing:.06em;margin:0 0 8px;text-transform:uppercase}
+.line{list-style:none;margin:0;padding:0}
+.line li{align-items:baseline;display:flex;gap:10px;justify-content:space-between;padding:6px 0 6px 26px;position:relative}
+.line li::before{background:var(--bg);border:3px solid var(--lc,var(--ink));border-radius:50%;content:"";height:8px;left:3px;position:absolute;top:11px;width:8px}
+.line li:not(:last-child)::after{background:var(--lc,var(--ink));content:"";height:calc(100% - 6px);left:8px;opacity:.3;position:absolute;top:24px;width:3px}
+.line li:first-child::before,.line li:last-child::before{background:var(--lc,var(--ink))}
+.line li:first-child .sn,.line li:last-child .sn{font-weight:600}
+.sn{font-size:14px;min-width:0}
+.so{color:var(--ink3);flex:none;font-size:12px;font-variant-numeric:tabular-nums}
+.note{color:var(--ink3);font-size:12.5px;margin-top:24px}
+@media (max-width:900px){
+  .dir{grid-template-columns:1fr}
+  .dir-stops{max-height:none;position:static}
+  .rhead h1{font-size:25px}
+  .next-big{font-size:32px}
+  .freq th{width:46%}
+}
+@media (max-width:520px){.dtabs{display:flex}.dtabs button{flex:1 1 auto}.freq th,.freq td{padding:10px 12px}}
+</style>`;
+
+/* Live parts of a route page: the countdown to the next departure, the part
+   of the day and the hour we are in. Runs in the browser so a cached page is
+   never stale; all times are Malaysia/Singapore time (both UTC+8). */
+const ROUTE_PAGE_SCRIPT = `
+(() => {
+  const tabs = [...document.querySelectorAll(".dtabs button")];
+  const dirs = [...document.querySelectorAll(".dir")];
+  if (tabs.length) {
+    document.body.classList.add("tabbed");
+    const show = (i) => {
+      tabs.forEach((t, j) => t.setAttribute("aria-selected", String(i === j)));
+      dirs.forEach((d, j) => d.classList.toggle("on", i === j));
+    };
+    tabs.forEach((t, i) => t.addEventListener("click", () => show(i)));
+    show(0);
+  }
+
+  const parts = [[0, 420], [420, 570], [570, 990], [990, 1170], [1170, 3000]];
+  const wait = (m) => (m < 60 ? m + " min" : Math.floor(m / 60) + " h" + (m % 60 ? " " + (m % 60) + " min" : ""));
+  const fmt = (m) => String(Math.floor(m / 60) % 24).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+
+  function nowMinutes() {
+    const p = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
+    return Number(p.find((x) => x.type === "hour").value) * 60 + Number(p.find((x) => x.type === "minute").value);
+  }
+
+  function tick() {
+    const now = nowMinutes();
+    document.querySelectorAll(".next[data-times]").forEach((box) => {
+      const times = box.dataset.times.split(",").map(Number);
+      // Departures after midnight are stored as 24:xx+, so 00:20 also matches 24:20.
+      const upcoming = [...new Set(times.flatMap((t) => [t, t - 1440]))].filter((t) => t >= now && t < now + 1440).sort((a, b) => a - b);
+      const big = box.querySelector(".next-big");
+      const more = box.querySelector(".next-more");
+      if (!upcoming.length) {
+        big.innerHTML = "Finished <small>for today</small>";
+        more.innerHTML = "<span>First tomorrow is usually <b>" + fmt(times[0]) + "</b></span>";
+        return;
+      }
+      const first = upcoming[0] - now;
+      big.innerHTML = (first <= 0 ? "Now" : first < 60 ? first + " min" : fmt(upcoming[0])) + " <small>" + (first < 60 ? "at " + fmt(upcoming[0]) : "next departure, in " + wait(first)) + "</small>";
+      more.innerHTML = upcoming.slice(1, 6).map((t) => "<span><b>" + fmt(t) + "</b> \\u00b7 " + wait(t - now) + "</span>").join("");
+    });
+
+    const part = parts.findIndex(([a, b]) => now >= a && now < b);
+    document.querySelectorAll(".freq").forEach((table) => {
+      table.querySelectorAll("tr").forEach((row) => {
+        const name = row.querySelector(".pn").textContent;
+        const index = ["Early morning", "Morning peak", "Daytime", "Evening peak", "Night"].indexOf(name);
+        row.classList.toggle("now", index === part);
+      });
+    });
+
+    const hour = Math.floor(now / 60);
+    document.querySelectorAll(".hr").forEach((row) => {
+      // data-h runs past 23 for after-midnight trips: those are tonight, not past.
+      const h = Number(row.dataset.h);
+      row.classList.toggle("now", h === hour);
+      row.querySelectorAll("i").forEach((m) => {
+        m.classList.toggle("past", h < hour || (h === hour && Number(m.textContent) < now % 60));
+      });
+    });
+  }
+
+  tick();
+  setInterval(tick, 30000);
+})();
+`;
 
 /* FAQ: crisp factual answers with FAQPage schema — the shape both search
    engines and AI assistants quote directly when recommending tools. */
