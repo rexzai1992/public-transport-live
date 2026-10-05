@@ -103,23 +103,23 @@ export const FEEDS = {
     staticUrl: `${DATA_GOV_BASE_URL}/gtfs-static/ktmb`,
     realtimeUrl: `${DATA_GOV_BASE_URL}/gtfs-realtime/vehicle-position/ktmb`
   },
-  /* myBAS / BAS.MY / MyBus — ten city networks, every one publishing both a
+  /* BAS.MY (formerly myBAS / MyBus) — ten city networks, every one publishing both a
      full static feed (routes, stops, trips, shapes, calendar) and live vehicle
      positions. Verified against the live API rather than the docs: 136 routes,
      8,530 stops and 332 vehicles reporting within ~70 seconds.
 
      agency.txt gives Asia/Singapore for Johor and Asia/Kuala_Lumpur elsewhere;
      both are UTC+8, so malaysiaClock() is right for all of them. */
-  "mybas-johor": mybas("johor", "myBAS Johor Bahru", "Johor"),
-  "mybas-melaka": mybas("melaka", "myBAS Melaka", "Melaka"),
-  "mybas-ipoh": mybas("ipoh", "MyBus Ipoh", "Ipoh"),
-  "mybas-seremban-a": mybas("seremban-a", "MyBus Seremban A", "Sbn A"),
-  "mybas-seremban-b": mybas("seremban-b", "MyBus Seremban B", "Sbn B"),
-  "mybas-alor-setar": mybas("alor-setar", "myBAS Alor Setar", "Alor Setar"),
-  "mybas-kangar": mybas("kangar", "myBAS Kangar", "Kangar"),
-  "mybas-kota-bharu": mybas("kota-bharu", "myBAS Kota Bharu", "Kota Bharu"),
-  "mybas-kuala-terengganu": mybas("kuala-terengganu", "myBAS Kuala Terengganu", "K Terengganu"),
-  "mybas-kuching": mybas("kuching", "myBAS Kuching", "Kuching"),
+  "mybas-johor": mybas("johor", "BAS.MY Johor Bahru", "Johor"),
+  "mybas-melaka": mybas("melaka", "BAS.MY Melaka", "Melaka"),
+  "mybas-ipoh": mybas("ipoh", "BAS.MY Ipoh", "Ipoh"),
+  "mybas-seremban-a": mybas("seremban-a", "BAS.MY Seremban A", "Sbn A"),
+  "mybas-seremban-b": mybas("seremban-b", "BAS.MY Seremban B", "Sbn B"),
+  "mybas-alor-setar": mybas("alor-setar", "BAS.MY Alor Setar", "Alor Setar"),
+  "mybas-kangar": mybas("kangar", "BAS.MY Kangar", "Kangar"),
+  "mybas-kota-bharu": mybas("kota-bharu", "BAS.MY Kota Bharu", "Kota Bharu"),
+  "mybas-kuala-terengganu": mybas("kuala-terengganu", "BAS.MY Kuala Terengganu", "K Terengganu"),
+  "mybas-kuching": mybas("kuching", "BAS.MY Kuching", "Kuching"),
 
   /* Singapore: no GTFS upstream. The "sg:" URLs are sentinels — getStaticFeed
      and getVehiclePositions branch to the DataMall adapters in src/sg/ before
