@@ -1,0 +1,37 @@
+{
+  "search_synonyms": [
+    "jalan,jln,jl",
+    "taman,tmn",
+    "kampung,kg,kpg,kampong",
+    "bandar,bdr",
+    "bukit,bkt",
+    "lorong,lrg",
+    "seksyen,sek,section",
+    "pasar,psr",
+    "sungai,sg,sungei",
+    "hospital,hosp",
+    "universiti,univ,university",
+    "seri,sri",
+    "stesen,station,stn",
+    "road,rd",
+    "street,st",
+    "avenue,ave",
+    "centre,center,ctr",
+    "interchange,int",
+    "block,blk"
+  ],
+  "classification_terms": [
+    {"key": "shop", "value": "mall", "terms": ["mall", "shopping"]},
+    {"key": "amenity", "value": "hospital", "terms": ["hospital"]},
+    {"key": "amenity", "value": "clinic", "terms": ["clinic", "klinik"]},
+    {"key": "amenity", "value": "school", "terms": ["school", "sekolah"]},
+    {"key": "amenity", "value": "university", "terms": ["university", "universiti"]},
+    {"key": "amenity", "value": "college", "terms": ["college", "kolej"]},
+    {"key": "amenity", "value": "place_of_worship", "terms": ["masjid", "mosque", "surau", "temple", "kuil", "church", "gereja"]},
+    {"key": "amenity", "value": "police", "terms": ["police"]},
+    {"key": "shop", "value": "supermarket", "terms": ["supermarket"]},
+    {"key": "tourism", "value": "hotel", "terms": ["hotel"]},
+    {"key": "railway", "value": "station", "terms": ["station", "stesen"]},
+    {"key": "aeroway", "value": "aerodrome", "terms": ["airport"]}
+  ]
+}

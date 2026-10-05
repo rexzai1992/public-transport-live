@@ -45,6 +45,8 @@ enabled with environment variables:
 | `ADMIN_PASS` | Enables the Basic Auth dashboard at `/my-admin` |
 | `VAPID_PUBLIC`, `VAPID_PRIVATE` | Enables web-push notifications |
 | `PUSH_COOLDOWN_HOURS` | Controls notification cooldown |
+| `PHOTON_URL` | Place search (Photon geocoder); defaults to the public `photon.komoot.io`. Self-host it with [`photon/`](photon/README.md) |
+| `PHOTON_FALLBACK_URL` | Used while `PHOTON_URL` is down; defaults to the public server, `none` disables |
 
 Do not commit production credentials. Supply them through your deployment
 environment or a local ignored environment file.
@@ -65,7 +67,8 @@ environment or a local ignored environment file.
 - `GET /api/rapid-bus/:category/routes/:routeId`
 - `GET /api/rapid-bus/:category/vehicles?routeId=<route_id>`
 - `GET /api/rapid-bus/:category/map?routeId=<route_id>&direction=<index>`
-- `GET /api/stops/search?q=<text>&feeds=<a,b>`
+- `GET /api/stops/search?q=<text>&feeds=<a,b>&lat=&lon=` (lat/lon break ties toward the map view)
+- `GET /api/places/search?q=<text>&region=my|sg&lat=&lon=` (places that are not stops, from OpenStreetMap)
 - `GET /api/journey?fromLat=&fromLon=&toStop=<feed:stopId>` (or `toLat`/`toLon`)
 
 Supported `category` values (`GET /api/rapid-bus/categories` describes each one,
