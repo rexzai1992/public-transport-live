@@ -31,13 +31,23 @@ const SEARCH_OPTIONAL = new Set([
 
 const SEARCH_STOP_CODE = /^(?!ss|usj|pju)[a-z]{1,3}\d{1,5}$/;
 
+/* Han ideographs, kana and CJK compatibility forms; see src/search.ts. */
+const SEARCH_CJK = /[\u3005\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/;
+
+function isCjk(word) {
+  return SEARCH_CJK.test(word);
+}
+
 function searchWords(text) {
   return String(text || "")
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
+    .normalize("NFC")
     .toLowerCase()
     .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, " ")
+    // Chinese 火车站 (railway), 地铁站 (metro), 车站/車站 also all mean "station".
+    .replace(/火车站|地铁站|地下鉄駅|车站|車站|[駅站]/g, " station ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
     .split(" ")
     .filter(Boolean)
@@ -45,7 +55,7 @@ function searchWords(text) {
 }
 
 function compactKey(text) {
-  return String(text || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return String(text || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 /* `words` is everything searchable; `phrase` is the plain name the phrase and
@@ -84,6 +94,7 @@ function editDistance(a, b, max) {
 function typoBudget(word) {
   // Numbers are identities — 250 and 251 are different buses.
   if (/\d/.test(word)) return 0;
+  if (isCjk(word)) return 0;
   if (word.length >= 8) return 2;
   if (word.length >= 4) return 1;
   return 0;
@@ -93,7 +104,7 @@ function typoBudget(word) {
 function wordScore(query, word, isLast) {
   if (word === query) return 10;
   if (word.startsWith(query)) return 7 + 2 * (query.length / word.length);
-  if (query.length >= 3 && word.includes(query)) return 4;
+  if ((query.length >= 3 || (isCjk(query) && query.length >= 2)) && word.includes(query)) return 4;
   const budget = typoBudget(query);
   if (!budget) return 0;
   const whole = editDistance(query, word, budget);
@@ -165,8 +176,16 @@ function highlightMatches(text, queryWords) {
   const value = String(text || "");
   if (!queryWords.length) return searchEscape(value);
   return value
-    .split(/([^A-Za-z0-9À-ɏ]+)/)
+    .split(/([^\p{L}\p{N}]+)/u)
     .map((piece) => {
+      // Chinese/Japanese run words together: mark the matched characters
+      // wherever they sit in the unspaced name (新宿 in 新宿駅西口).
+      if (isCjk(piece)) {
+        const hit = queryWords.filter((q) => isCjk(q) && piece.includes(q)).sort((x, y) => y.length - x.length)[0];
+        if (!hit) return searchEscape(piece);
+        const at = piece.indexOf(hit);
+        return `${searchEscape(piece.slice(0, at))}<mark>${searchEscape(hit)}</mark>${searchEscape(piece.slice(at + hit.length))}`;
+      }
       const word = searchWords(piece)[0];
       if (!word) return searchEscape(piece);
       const lower = piece.toLowerCase();
@@ -185,4 +204,93 @@ function highlightMatches(text, queryWords) {
       return `${searchEscape(piece.slice(0, at))}<mark>${searchEscape(piece.slice(at, at + hit.length))}</mark>${searchEscape(piece.slice(at + hit.length))}`;
     })
     .join("");
+}
+
+/* Japanese kana -> romaji (modified Hepburn, no macrons), so "shinjuku" finds
+   a name whose Latin form is only its kana reading. Copy of kanaToRomaji and
+   romajiForms in src/search.ts; kanji carry no reading here. */
+const KANA_ROMAJI = {
+  あ: "a", い: "i", う: "u", え: "e", お: "o",
+  か: "ka", き: "ki", く: "ku", け: "ke", こ: "ko",
+  が: "ga", ぎ: "gi", ぐ: "gu", げ: "ge", ご: "go",
+  さ: "sa", し: "shi", す: "su", せ: "se", そ: "so",
+  ざ: "za", じ: "ji", ず: "zu", ぜ: "ze", ぞ: "zo",
+  た: "ta", ち: "chi", つ: "tsu", て: "te", と: "to",
+  だ: "da", ぢ: "ji", づ: "zu", で: "de", ど: "do",
+  な: "na", に: "ni", ぬ: "nu", ね: "ne", の: "no",
+  は: "ha", ひ: "hi", ふ: "fu", へ: "he", ほ: "ho",
+  ば: "ba", び: "bi", ぶ: "bu", べ: "be", ぼ: "bo",
+  ぱ: "pa", ぴ: "pi", ぷ: "pu", ぺ: "pe", ぽ: "po",
+  ま: "ma", み: "mi", む: "mu", め: "me", も: "mo",
+  や: "ya", ゆ: "yu", よ: "yo",
+  ら: "ra", り: "ri", る: "ru", れ: "re", ろ: "ro",
+  わ: "wa", ゐ: "i", ゑ: "e", を: "o", ん: "n", ゔ: "vu",
+  ぁ: "a", ぃ: "i", ぅ: "u", ぇ: "e", ぉ: "o", ゎ: "wa",
+  ゃ: "ya", ゅ: "yu", ょ: "yo"
+};
+const KANA_SMALL_Y = { ゃ: "a", ゅ: "u", ょ: "o" };
+const KANA_SMALL_VOWEL = { ぁ: "a", ぃ: "i", ぅ: "u", ぇ: "e", ぉ: "o" };
+const SEARCH_KANA = /[ぁ-ゔァ-ヴｦ-ﾝ]/;
+
+function hasKana(text) {
+  return SEARCH_KANA.test(String(text || ""));
+}
+
+function kanaToRomaji(text) {
+  const chars = [...String(text || "").normalize("NFKC")].map((char) => {
+    const code = char.charCodeAt(0);
+    return code >= 0x30a1 && code <= 0x30f4 ? String.fromCharCode(code - 0x60) : char;
+  });
+  let out = "";
+  let geminate = false;
+  let last = "other";
+  for (let i = 0; i < chars.length; i++) {
+    const char = chars[i];
+    if (char === "っ") {
+      geminate = true;
+      continue;
+    }
+    if (char === "ー") {
+      if (last === "kana" && /[aeiou]$/.test(out)) out += out[out.length - 1];
+      continue;
+    }
+    let syllable = KANA_ROMAJI[char];
+    if (syllable === undefined) {
+      geminate = false;
+      const kind = char !== "・" && isCjk(char) ? "cjk" : "other";
+      if (kind === "cjk" && last === "kana") out += " ";
+      out += char === "・" ? " " : char;
+      last = kind;
+      continue;
+    }
+    const next = chars[i + 1];
+    if (next && KANA_SMALL_Y[next] && syllable.length > 1 && syllable.endsWith("i")) {
+      const head = syllable.slice(0, -1);
+      syllable = /^(sh|ch|j)$/.test(head) ? head + KANA_SMALL_Y[next] : head + "y" + KANA_SMALL_Y[next];
+      i++;
+    } else if (next && KANA_SMALL_VOWEL[next] && !KANA_SMALL_VOWEL[char] && /^([^aeiou]+[aeiou]|[ui])$/.test(syllable)) {
+      const head = syllable === "u" ? "w" : syllable === "i" ? "y" : syllable.slice(0, -1);
+      syllable = head + KANA_SMALL_VOWEL[next];
+      i++;
+    }
+    if (geminate && syllable !== "n" && /^[^aeiou]/.test(syllable)) {
+      syllable = (syllable.startsWith("ch") ? "t" : syllable[0]) + syllable;
+    }
+    geminate = false;
+    if (last === "cjk") out += " ";
+    out += syllable;
+    last = "kana";
+  }
+  return out;
+}
+
+/* Plain Hepburn, long vowels collapsed (toukyou -> tokyo), n -> m before
+   b/m/p (shinbashi -> shimbashi); none when the text has no kana. */
+function romajiForms(text) {
+  const value = String(text || "");
+  if (!hasKana(value)) return [];
+  const plain = kanaToRomaji(value);
+  const collapsed = plain.replace(/ou/g, "o").replace(/([aeiou])\1/g, "$1");
+  const forms = [plain, collapsed, collapsed.replace(/n(?=[bmp])/g, "m")];
+  return forms.filter((form, index) => forms.indexOf(form) === index && form !== value);
 }

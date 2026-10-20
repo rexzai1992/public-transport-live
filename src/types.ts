@@ -7,6 +7,9 @@ export type GtfsRoute = {
   type?: string;
   color?: string;
   textColor?: string;
+  /** Other names for the route from the feed's translations.txt (English,
+      kana reading, pinyin…), searchable but never displayed as the title. */
+  altNames?: string[];
 };
 
 export type GtfsStop = {
@@ -16,6 +19,9 @@ export type GtfsStop = {
   lon: number;
   /** From the rail feed's isOKU column; undefined when the feed omits it. */
   accessible?: boolean;
+  /** Other names for the stop from the feed's translations.txt (English,
+      kana reading, pinyin…), searchable but never displayed as the name. */
+  altNames?: string[];
 };
 
 export type GtfsTrip = {

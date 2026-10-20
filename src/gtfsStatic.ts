@@ -152,10 +152,22 @@ async function readLastGoodZip(feedId: FeedId): Promise<Buffer | null> {
   }
 }
 
-async function parseFeedZip(zipBuffer: ArrayBuffer | Buffer): Promise<StaticGtfsFeed> {
-  const zip = await JSZip.loadAsync(zipBuffer);
+/* Some publishers zip the feed's folder rather than its files
+   ("gtfs/stops.txt"). Read from the shallowest folder holding stops.txt. */
+function feedRoot(zip: JSZip): JSZip {
+  if (zip.file("stops.txt")) return zip;
+  const nested = zip
+    .file(/(^|\/)stops\.txt$/)
+    .map((file) => file.name)
+    .filter((name) => !name.startsWith("__MACOSX/"))
+    .sort((a, b) => a.split("/").length - b.split("/").length)[0];
+  return nested ? zip.folder(nested.slice(0, -"/stops.txt".length)) ?? zip : zip;
+}
 
-  const [routes, stops, trips, stopTimes, shapes, calendars, calendarExceptions, frequencies] =
+export async function parseFeedZip(zipBuffer: ArrayBuffer | Buffer): Promise<StaticGtfsFeed> {
+  const zip = feedRoot(await JSZip.loadAsync(zipBuffer));
+
+  const [routes, stops, trips, stopTimes, shapes, calendars, calendarExceptions, frequencies, translations] =
     await Promise.all([
       parseGtfsFile<GtfsRoute>(zip, "routes.txt", parseRoute),
       parseGtfsFile<GtfsStop>(zip, "stops.txt", parseStop),
@@ -164,8 +176,11 @@ async function parseFeedZip(zipBuffer: ArrayBuffer | Buffer): Promise<StaticGtfs
       parseGtfsFile<GtfsShapePoint>(zip, "shapes.txt", parseShapePoint),
       parseGtfsFile<GtfsCalendar>(zip, "calendar.txt", parseCalendar),
       parseGtfsFile<GtfsCalendarException>(zip, "calendar_dates.txt", parseCalendarDate),
-      parseGtfsFile<GtfsFrequency>(zip, "frequencies.txt", parseFrequency)
+      parseGtfsFile<GtfsFrequency>(zip, "frequencies.txt", parseFrequency),
+      readTranslations(zip)
     ]);
+
+  applyTranslations(translations, routes, stops);
 
   return {
     loadedAt: new Date().toISOString(),
@@ -200,7 +215,8 @@ export function listRoutes(feed: StaticGtfsFeed, search?: string): GtfsRoute[] {
       route.routeId,
       route.shortName,
       route.longName,
-      route.description
+      route.description,
+      ...(route.altNames ?? [])
     ]
       .filter(Boolean)
       .some((value) => value!.toLowerCase().includes(normalizedSearch));
@@ -401,6 +417,90 @@ export function resolveRouteIdForTrip(feed: StaticGtfsFeed, tripId?: string): st
   return suffixMatch?.routeId;
 }
 
+/* translations.txt gives other names for a stop or route — English, the kana
+   reading, pinyin — which become searchable altNames so a passenger can type
+   "Shinjuku" for 新宿. Two layouts exist:
+   - GTFS standard: table_name, field_name, language, translation, and either
+     record_id (+ record_sub_id) or field_value naming the original text;
+   - legacy GTFS-JP: trans_id (the original text itself), lang, translation.
+   Only names the feed itself supplies are used; nothing is transliterated
+   here. A feed without the file is left exactly as it was. */
+function applyTranslations(rows: Record<string, string>[], routes: GtfsRoute[], stops: GtfsStop[]): void {
+  if (!rows.length) return;
+
+  const add = (target: GtfsStop | GtfsRoute, own: (string | undefined)[], translation: string | undefined) => {
+    const value = translation?.trim();
+    if (!value || own.some((name) => name?.trim() === value)) return;
+    const names = (target.altNames ??= []);
+    if (!names.includes(value)) names.push(value);
+  };
+  const stopName = (stop: GtfsStop) => [stop.name];
+  const routeNames = (route: GtfsRoute) => [route.longName, route.shortName];
+
+  const stopById = new Map(stops.map((stop) => [stop.stopId, stop]));
+  const routeById = new Map(routes.map((route) => [route.routeId, route]));
+  const stopsByName = new Map<string, GtfsStop[]>();
+  for (const stop of stops) {
+    const list = stopsByName.get(stop.name);
+    if (list) list.push(stop);
+    else stopsByName.set(stop.name, [stop]);
+  }
+  const routesByName = new Map<string, GtfsRoute[]>();
+  for (const route of routes) {
+    for (const name of new Set([route.longName, route.shortName])) {
+      if (!name) continue;
+      const list = routesByName.get(name);
+      if (list) list.push(route);
+      else routesByName.set(name, [route]);
+    }
+  }
+  const routesByField = (field: "longName" | "shortName", value: string) =>
+    (routesByName.get(value) ?? []).filter((route) => route[field] === value);
+
+  for (const row of rows) {
+    if (row.table_name !== undefined) {
+      const table = row.table_name;
+      const field = row.field_name;
+      const recordId = row.record_id;
+      const fieldValue = row.field_value;
+      if (table === "stops" && field === "stop_name") {
+        const targets = recordId ? [stopById.get(recordId)] : fieldValue ? stopsByName.get(fieldValue) ?? [] : [];
+        for (const stop of targets) if (stop) add(stop, stopName(stop), row.translation);
+      } else if (table === "routes" && (field === "route_long_name" || field === "route_short_name")) {
+        const key = field === "route_long_name" ? "longName" : "shortName";
+        const targets = recordId ? [routeById.get(recordId)] : fieldValue ? routesByField(key, fieldValue) : [];
+        for (const route of targets) if (route) add(route, routeNames(route), row.translation);
+      }
+    } else if (row.trans_id) {
+      for (const stop of stopsByName.get(row.trans_id) ?? []) add(stop, stopName(stop), row.translation);
+      for (const route of routesByName.get(row.trans_id) ?? []) add(route, routeNames(route), row.translation);
+    }
+  }
+}
+
+/* translations.txt is optional and only feeds search, so it is read leniently
+   — real GTFS-JP files carry unescaped quotes (Nagano: `Nagano city area bus
+   "Gururin-go"`) — and a file that still cannot be read is dropped with a
+   warning rather than failing the whole feed. */
+async function readTranslations(zip: JSZip): Promise<Record<string, string>[]> {
+  const file = zip.file("translations.txt");
+  if (!file) return [];
+  try {
+    const text = await file.async("text");
+    return parse(text, {
+      columns: true,
+      skip_empty_lines: true,
+      bom: true,
+      trim: true,
+      relax_quotes: true,
+      relax_column_count: true
+    }) as Record<string, string>[];
+  } catch (error) {
+    console.warn("translations.txt unreadable, ignoring it:", (error as Error).message);
+    return [];
+  }
+}
+
 async function parseGtfsFile<T>(
   zip: JSZip,
   filename: string,
@@ -412,11 +512,16 @@ async function parseGtfsFile<T>(
   }
 
   const text = await file.async("text");
+  /* One stray quote or short row must not cost the whole feed: real feeds
+     carry unescaped quotes in names. Rows missing a required field are then
+     dropped by the row parsers. */
   const rows = parse(text, {
     columns: true,
     skip_empty_lines: true,
     bom: true,
-    trim: true
+    trim: true,
+    relax_quotes: true,
+    relax_column_count: true
   }) as Record<string, string>[];
 
   return rows.map(rowParser).filter((row): row is T => Boolean(row));
@@ -439,9 +544,12 @@ function parseRoute(row: Record<string, string>): GtfsRoute | undefined {
   };
 }
 
+const MIN_HEADWAY_SECONDS = 30;
+
 function parseFrequency(row: Record<string, string>): GtfsFrequency | undefined {
   const headway = Number(row.headway_secs);
-  if (!row.trip_id || !row.start_time || !row.end_time || !Number.isFinite(headway) || headway <= 0) {
+  // Below 30 s is no real service and would expand into millions of departures.
+  if (!row.trip_id || !row.start_time || !row.end_time || !Number.isFinite(headway) || headway < MIN_HEADWAY_SECONDS) {
     return undefined;
   }
   return {
@@ -483,11 +591,18 @@ function parseCalendarDate(row: Record<string, string>): GtfsCalendarException |
   return { serviceId: row.service_id, date: row.date, exceptionType };
 }
 
-function parseStop(row: Record<string, string>): GtfsStop | undefined {
-  const lat = Number(row.stop_lat);
-  const lon = Number(row.stop_lon);
+/** A plain decimal number, else NaN. Number() alone reads "" as 0 and "0x10" as 16. */
+function decimal(value: string | undefined): number {
+  const text = value?.trim() ?? "";
+  return /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(text) ? Number(text) : NaN;
+}
 
-  if (!row.stop_id || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+function parseStop(row: Record<string, string>): GtfsStop | undefined {
+  // Number("") is 0: a blank coordinate would put the stop in the Gulf of Guinea.
+  const lat = decimal(row.stop_lat);
+  const lon = decimal(row.stop_lon);
+
+  if (!row.stop_id || !(Math.abs(lat) <= 90) || !(Math.abs(lon) <= 180)) {
     return undefined;
   }
 
@@ -522,7 +637,7 @@ function parseTrip(row: Record<string, string>): GtfsTrip | undefined {
 }
 
 function parseStopTime(row: Record<string, string>): GtfsStopTime | undefined {
-  const sequence = Number(row.stop_sequence);
+  const sequence = row.stop_sequence?.trim() ? Number(row.stop_sequence) : NaN;
 
   if (!row.trip_id || !row.stop_id || !Number.isFinite(sequence)) {
     return undefined;

@@ -13,7 +13,8 @@ import {
   routeMatchKeys,
   vehicleBelongsToRoute
 } from "./gtfsStatic.js";
-import { buildRouteStopSchedule, malaysiaClock, withNextDepartures } from "./schedule.js";
+import { buildRouteStopSchedule, withNextDepartures } from "./schedule.js";
+import { feedTime, serviceClockForFeed } from "./providers/profiles.js";
 import { searchPlaces } from "./places.js";
 import { planJourney, searchStops, nearbyDepartures, stopBoard, stopsInBounds } from "./journey.js";
 import { getSgStopArrivals } from "./sg/vehicles.js";
@@ -53,7 +54,9 @@ apiRouter.get("/rapid-bus/categories", (_req, res) => {
       label: FEEDS[id].label,
       short: FEEDS[id].short,
       mode: FEEDS[id].mode,
-      live: FEEDS[id].realtimeUrl !== null
+      live: FEEDS[id].realtimeUrl !== null,
+      timeZone: feedTime(id).timeZone,
+      timeLabel: feedTime(id).label
     }))
   });
 });
@@ -82,7 +85,10 @@ apiRouter.get("/route-index", async (_req, res, next) => {
         label: FEEDS[id].label,
         short: FEEDS[id].short,
         mode: FEEDS[id].mode,
-        live: FEEDS[id].realtimeUrl !== null
+        live: FEEDS[id].realtimeUrl !== null,
+        // Times for this feed are shown in its own local time (MYT, SGT, JST…).
+        timeZone: feedTime(id).timeZone,
+        timeLabel: feedTime(id).label
       })),
       categories: categories.filter((entry) => entry !== null)
     });
@@ -215,7 +221,8 @@ apiRouter.get("/rapid-bus/:category/map", async (req, res, next) => {
     const pattern = patterns[directionIndex];
 
     const shapes = pattern ? pattern.shapes : findRouteShapes(feed, routeId);
-    const clock = malaysiaClock();
+    // The feed's own local time: Malaysian feeds MYT, Japanese JST, and so on.
+    const clock = serviceClockForFeed(category);
     const patternStops = pattern ? pattern.stops : findOrderedRouteStops(feed, routeId);
     const stops = withNextDepartures(
       patternStops,

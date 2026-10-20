@@ -9,7 +9,7 @@
    Answers are cached in memory: people retype the same few hundred places,
    and Photon is a shared community service whose goodwill we depend on. */
 
-import { makeDoc, normalizeWords, scoreDoc } from "./search.js";
+import { isCjk, makeDoc, normalizeWords, scoreDoc } from "./search.js";
 
 export type Place = {
   name: string;
@@ -112,7 +112,8 @@ export async function searchPlaces(
   limit = 5
 ): Promise<Place[]> {
   const words = normalizeWords(query);
-  if (!words.length || query.trim().length < 3) return [];
+  // Three letters, or two CJK characters (新宿, 上海) — those are whole names.
+  if (!words.length || (query.trim().length < 3 && !(isCjk(query) && query.trim().length >= 2))) return [];
 
   // Rounded so a nudge of the map reuses the answer.
   const bias = near ? `${near.lat.toFixed(1)},${near.lon.toFixed(1)}` : "";

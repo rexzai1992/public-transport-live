@@ -1,8 +1,10 @@
 import { type FeedId, FEEDS } from "./config.js";
 import { getStaticFeed } from "./gtfsStatic.js";
-import { gtfsTimeToMinutes, malaysiaClock, type MalaysiaClock } from "./schedule.js";
+import { gtfsTimeToMinutes, type MalaysiaClock } from "./schedule.js";
+import { providerProfile } from "./providers/profiles.js";
+import { partitionByClock, serviceClock } from "./providers/normalization.js";
 import type { StaticGtfsFeed } from "./types.js";
-import { makeDoc, normalizeWords, scoreDoc, type SearchDoc } from "./search.js";
+import { makeDocs, queryVariants, scoreDocs, type SearchDoc } from "./search.js";
 
 /* ---------------------------------------------------------------------------
    A journey planner over the GTFS feeds.
@@ -47,8 +49,13 @@ type Pattern = {
 
 type Network = {
   builtAt: number;
+  /** IANA zone every feed in this network keeps its timetable in. */
+  timeZone: string;
   serviceDay: string;
   stops: Map<string, StopRef>;
+  /** stop key -> the feed's other names for it (translations.txt), searched
+      alongside the name but never shown or returned. */
+  altNames: Map<string, string[]>;
   patterns: Pattern[];
   /** stop key -> indices into patterns that serve it */
   patternsByStop: Map<string, number[]>;
@@ -121,7 +128,9 @@ function normalizeName(name: string): string {
     .toUpperCase()
     .replace(/\b(LRT|MRT|KTM|BRT|MONORAIL|STESEN|STATION|HENTIAN)\b/g, "")
     .replace(/\([^)]*\)/g, "")
-    .replace(/[^A-Z0-9]+/g, " ")
+    // Every script's letters, so Chinese/Japanese station names don't all
+    // collapse to "" and merge into one.
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 }
 
@@ -239,7 +248,7 @@ function buildPatternsForFeed(
   return patterns;
 }
 
-async function buildNetwork(feedIds: FeedId[], clock: MalaysiaClock): Promise<Network> {
+async function buildNetwork(feedIds: FeedId[], clock: MalaysiaClock, timeZone: string): Promise<Network> {
   const stops = new Map<string, StopRef>();
   const patterns: Pattern[] = [];
 
@@ -267,6 +276,14 @@ async function buildNetwork(feedIds: FeedId[], clock: MalaysiaClock): Promise<Ne
     }
     const active = activeServiceIds(feed, clock);
     patterns.push(...buildPatternsForFeed(feedId, feed, active, stops));
+  }
+
+  const altNames = new Map<string, string[]>();
+  for (const { feedId, feed } of loaded) {
+    for (const [stopId, stop] of feed?.stops ?? []) {
+      const key = stopKey(feedId, stopId);
+      if (stop.altNames?.length && stops.has(key)) altNames.set(key, stop.altNames);
+    }
   }
 
   const patternsByStop = new Map<string, number[]>();
@@ -331,8 +348,10 @@ async function buildNetwork(feedIds: FeedId[], clock: MalaysiaClock): Promise<Ne
 
   return {
     builtAt: Date.now(),
+    timeZone,
     serviceDay: clock.date,
     stops,
+    altNames,
     patterns,
     patternsByStop,
     transfers
@@ -347,9 +366,28 @@ async function buildNetwork(feedIds: FeedId[], clock: MalaysiaClock): Promise<Ne
    Concurrent callers now await the same build. */
 const networkBuilds = new Map<string, Promise<Network>>();
 
-export async function getNetwork(feedIds: FeedId[]): Promise<Network> {
-  const clock = malaysiaClock();
-  const cacheKey = `${[...feedIds].sort().join(",")}|${clock.date}`;
+/* A network runs on one service clock: departures are minutes after local
+   midnight, so feeds can only share a network if their wall clocks agree
+   right now. Malaysia and Singapore (both UTC+8) do; a Japan (UTC+9) feed
+   does not, and is left out with a warning rather than planned an hour off.
+   The first feed sets the clock, so callers list their home feeds first. */
+function sameClockFeeds(feedIds: FeedId[], now: Date): { feeds: FeedId[]; timeZone: string } {
+  const { timeZone, kept, leftOut } = partitionByClock(feedIds, (id) => providerProfile(id).timeZone, now);
+  for (const id of leftOut) {
+    console.warn(`journey network: ${id} keeps ${providerProfile(id).timeZone} time, not ${timeZone}; left out`);
+  }
+  return { feeds: kept, timeZone };
+}
+
+/** The service clock a network's departures are measured against. */
+export function networkClock(network: Network, now: Date = new Date()): MalaysiaClock {
+  return serviceClock(network.timeZone, now);
+}
+
+export async function getNetwork(requested: FeedId[]): Promise<Network> {
+  const { feeds: feedIds, timeZone } = sameClockFeeds(requested, new Date());
+  const clock = serviceClock(timeZone);
+  const cacheKey = `${[...feedIds].sort().join(",")}|${timeZone}|${clock.date}`;
   const cached = networkCache.get(cacheKey);
   if (cached && Date.now() - cached.builtAt < NETWORK_TTL_MS) {
     return cached;
@@ -360,7 +398,7 @@ export async function getNetwork(feedIds: FeedId[]): Promise<Network> {
     return inFlight;
   }
 
-  const build = buildNetwork(feedIds, clock)
+  const build = buildNetwork(feedIds, clock, timeZone)
     .then((network) => {
       networkCache.set(cacheKey, network);
       return network;
@@ -434,8 +472,8 @@ export async function planJourney(request: PlanRequest): Promise<{
   departAfter: string;
   journeys: Journey[];
 }> {
-  const clock = malaysiaClock();
   const network = await getNetwork(request.feeds);
+  const clock = networkClock(network);
   const departAfter = request.departAfter ?? clock.minutes;
 
   // Where can we start, and where are we trying to end up?
@@ -802,8 +840,7 @@ export async function nearbyDepartures(
   limit = 6
 ): Promise<NearbyStop[]> {
   const network = await getNetwork(feeds);
-  const clock = malaysiaClock();
-  const now = clock.minutes;
+  const now = networkClock(network).minutes;
 
   const candidates: { stop: StopRef; meters: number }[] = [];
   for (const stop of network.stops.values()) {
@@ -902,7 +939,7 @@ export async function stopBoard(
     return null;
   }
 
-  const now = malaysiaClock().minutes;
+  const now = networkClock(network).minutes;
   const byRoute = new Map<string, StopRouteDeparture>();
 
   for (const patternIndex of network.patternsByStop.get(key) ?? []) {
@@ -973,16 +1010,19 @@ export async function stopBoard(
   return { stop, routes };
 }
 
-/* Each stop's search words, built once per network rather than per keystroke. */
-const stopDocs = new WeakMap<Network, Map<string, SearchDoc>>();
+/* Each stop's search words, built once per network rather than per keystroke.
+   One doc per spelling: the name, then any names the feed's translations.txt
+   gives (English, kana reading…), then romaji of kana among them — so
+   "Shinjuku" finds 新宿 when the feed says so. The best spelling scores. */
+const stopDocs = new WeakMap<Network, Map<string, SearchDoc[]>>();
 
-function stopDocsFor(network: Network): Map<string, SearchDoc> {
+function stopDocsFor(network: Network): Map<string, SearchDoc[]> {
   let docs = stopDocs.get(network);
   if (!docs) {
     docs = new Map();
     for (const stop of network.stops.values()) {
       if (network.patternsByStop.has(stop.key)) {
-        docs.set(stop.key, makeDoc(stop.name));
+        docs.set(stop.key, makeDocs(stop.name, network.altNames.get(stop.key)));
       }
     }
     stopDocs.set(network, docs);
@@ -1001,14 +1041,15 @@ export async function searchStops(
   near?: { lat: number; lon: number }
 ): Promise<StopRef[]> {
   const network = await getNetwork(feeds);
-  const queryWords = normalizeWords(query);
-  if (!queryWords.length) {
+  const variants = queryVariants(query);
+  if (!variants.length) {
     return [];
   }
 
   const scored: { stop: StopRef; score: number; meters: number }[] = [];
-  for (const [key, doc] of stopDocsFor(network)) {
-    const score = scoreDoc(queryWords, doc);
+  for (const [key, docs] of stopDocsFor(network)) {
+    let score = 0;
+    for (const queryWords of variants) score = Math.max(score, scoreDocs(queryWords, docs));
     if (score > 0) {
       const stop = network.stops.get(key)!;
       const meters = near ? haversineMeters(near.lat, near.lon, stop.lat, stop.lon) : 0;

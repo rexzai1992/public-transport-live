@@ -497,6 +497,14 @@ function normalizeRoute(route, category) {
   const shortName = usableShort || (looksLikeCode ? rawLong : route.routeId);
   const longName = usableShort || !looksLikeCode ? rawLong : `${labels[category]} route ${rawLong}`;
 
+  /* Other names the feed's translations.txt gives ("Yamanote Line" for 山手線,
+     a kana reading), plus romaji of any kana — searchable, never the title. */
+  const altNames = Array.isArray(route.altNames) ? route.altNames.map(String) : [];
+  const altSpellings = [rawShort, rawLong, ...altNames]
+    .flatMap((name) => [...(altNames.includes(name) ? [name] : []), ...romajiForms(name)])
+    .filter((name, index, all) => name && all.indexOf(name) === index);
+  const altText = altSpellings.join(" ");
+
   return {
     routeId: route.routeId,
     category,
@@ -511,9 +519,12 @@ function normalizeRoute(route, category) {
        to know already. "mybus" is included because three of these concessions
        brand themselves that way and passengers say it. */
     doc: makeSearchDoc(
-      `${shortName} ${longName} ${route.description || ""} ${route.routeId} ${labels[category] || ""} ${category}${category.startsWith("mybas-") ? " mybus bas.my" : ""}`,
+      `${shortName} ${longName} ${route.description || ""} ${route.routeId} ${labels[category] || ""} ${category}${category.startsWith("mybas-") ? " mybus bas.my" : ""}${altText ? ` ${altText}` : ""}`,
       `${longName} ${route.description || ""}`
-    )
+    ),
+    // Each alternative spelling on its own too, so "Yamanote Line" can be an
+    // exact phrase hit the way the displayed name is.
+    altDocs: altSpellings.map((name) => makeSearchDoc(name))
   };
 }
 
@@ -591,7 +602,9 @@ function scoreRoute(route, queryWords, compactQuery) {
     // "117" finds T117; only for numbers, or "an" would find every code.
     if (/\d/.test(compactQuery) && route.codeKey.includes(compactQuery)) return 600 - route.codeKey.length;
   }
-  return scoreDoc(queryWords, route.doc);
+  let best = scoreDoc(queryWords, route.doc);
+  for (const doc of route.altDocs || []) best = Math.max(best, scoreDoc(queryWords, doc));
+  return best;
 }
 
 function searchRoutes() {
@@ -1755,7 +1768,7 @@ function shortBusLabel(value) {
 function vehiclePopup(feature) {
   const speedKmh = Number(feature.properties.speed || 0) * 3.6;
   const updated = feature.properties.timestamp
-    ? `${formatTimeMY(feature.properties.timestamp)} MYT`
+    ? `${formatTimeLocal(feature.properties.timestamp)} ${feedTzLabel()}`
     : "unknown";
   const bearing = feature.properties.bearing;
 
@@ -1779,7 +1792,7 @@ function stopPopup(feature) {
     <div class="popup-title"><strong>${escapeHtml(props.name)}</strong></div>
     <div class="popup-rows">
       <span class="strong">${hasEta ? escapeHtml(formatEtaShort(props)) : "No live bus approaching"}</span>
-      ${upcoming.length ? `<span>Timetable ${escapeHtml(upcoming.map(formatClock).join(" · "))} MYT</span>` : ""}
+      ${upcoming.length ? `<span>Timetable ${escapeHtml(upcoming.map(formatClock).join(" · "))} ${feedTzLabel()}</span>` : ""}
       ${props.accessible === true ? `<span>Step-free access</span>` : ""}
     </div>
     <button type="button" class="popup-remind${state.stopAlerts.has(String(props.stopId)) ? " on" : ""}" data-alert-stop="${escapeHtml(String(props.stopId))}">
@@ -2080,7 +2093,7 @@ function renderRouteDetails() {
 
     <div class="list-title">
       <h3 class="cap">${state.detailsTab === "stops" ? "Route stops" : "Next arrivals"}</h3>
-      <small>${state.detailsTab === "stops" ? (state.live ? "live · else scheduled" : "scheduled (MYT)") : `auto-refresh ${LIVE_REFRESH_MS / 1000}s`}</small>
+      <small>${state.detailsTab === "stops" ? (state.live ? "live · else scheduled" : `scheduled (${feedTzLabel()})`) : `auto-refresh ${LIVE_REFRESH_MS / 1000}s`}</small>
     </div>
 
     <div class="detail-scroll scroll">
@@ -2253,7 +2266,7 @@ function renderScheduledFallback() {
         <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/>
         <path d="M12 7v5.5l3.5 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      No ${escapeHtml(vehicleNoun(true))} reporting live — showing today&rsquo;s timetable (MYT).
+      No ${escapeHtml(vehicleNoun(true))} reporting live — showing today&rsquo;s timetable (${feedTzLabel()}).
     </div>
     <div class="arrivals">
       ${scheduled
@@ -2335,7 +2348,7 @@ function followingWaits(props, limit = 2) {
     return [];
   }
 
-  const now = nowMinutesMY();
+  const now = nowMinutesLocal();
   return upcoming
     .slice(1, 1 + limit)
     .map((time) => {
@@ -2376,7 +2389,7 @@ function stopTimeCell(props) {
     const wait = Number(props.nextDepartureInMinutes);
     const label = Number.isFinite(wait) && wait <= 90 ? formatWaitShort(wait) : formatClock(scheduled);
     return `<span class="stop-times">
-        <span class="stop-eta sched" title="Scheduled ${escapeHtml(formatClock(scheduled))} MYT">${escapeHtml(label)}</span>
+        <span class="stop-eta sched" title="Scheduled ${escapeHtml(formatClock(scheduled))} ${feedTzLabel()}">${escapeHtml(label)}</span>
         ${then}
       </span>`;
   }
@@ -3212,11 +3225,23 @@ function etaMetaLine(properties) {
   return parts.join(" · ");
 }
 
-/* GTFS static times are already Malaysia local wall-clock ("05:53:00", and
+/* GTFS static times are already the feed's local wall-clock ("05:53:00", and
    past-midnight values like "25:10:00"). Realtime timestamps are UTC instants,
-   so those must be converted into Asia/Kuala_Lumpur explicitly rather than
-   rendered in whatever timezone the viewer's browser happens to be in. */
+   so those must be converted into the feed's own zone explicitly rather than
+   rendered in whatever timezone the viewer's browser happens to be in.
+
+   Each feed says which zone and label it uses (/api/route-index feeds[]:
+   timeZone, timeLabel — MYT, SGT, JST, CST). Until that list arrives, Malaysia
+   time is the fallback, which is also Singapore's clock. */
 const MY_TZ = "Asia/Kuala_Lumpur";
+
+function feedTz(category = state.category) {
+  return feedInfo[category]?.timeZone || MY_TZ;
+}
+
+function feedTzLabel(category = state.category) {
+  return feedInfo[category]?.timeLabel || (state.region === "sg" ? "SGT" : "MYT");
+}
 
 function formatClock(value) {
   const text = String(value || "").trim();
@@ -3228,13 +3253,13 @@ function formatClock(value) {
   return `${String(hours).padStart(2, "0")}:${match[2]}`;
 }
 
-function formatTimeMY(isoString) {
+function formatTimeLocal(isoString, timeZone = feedTz()) {
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) {
     return "unknown";
   }
   return date.toLocaleTimeString("en-GB", {
-    timeZone: MY_TZ,
+    timeZone,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false
@@ -3249,9 +3274,9 @@ function gtfsTimeToMinutes(value) {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
-function nowMinutesMY() {
+function nowMinutesLocal(timeZone = feedTz()) {
   const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: MY_TZ,
+    timeZone,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false
@@ -3266,7 +3291,7 @@ function nowMinutesMY() {
    The server resolves these against today's service calendar in Malaysia time,
    so nextDepartures[0] is the genuine next bus — not one arbitrary trip's time. */
 function nextScheduledStops(limit = 6) {
-  const now = nowMinutesMY();
+  const now = nowMinutesLocal();
 
   return state.currentStops
     .map((feature) => {
@@ -3996,7 +4021,7 @@ function renderRecentJourneys() {
 }
 
 /* Departure time: "Now" is the default; picking a time plans for later today.
-   The API takes departAfter as minutes after midnight (service day, MYT). */
+   The API takes departAfter as minutes after midnight (service day, the feed's local time). */
 const jpNow = document.getElementById("jpNow");
 const jpTime = document.getElementById("jpTime");
 
@@ -5204,7 +5229,7 @@ function offlineLiveText() {
   if (Number.isNaN(saved.getTime())) {
     return "Offline · showing saved data";
   }
-  return `Offline · saved ${formatTimeMY(lastCacheStamp)} MYT`;
+  return `Offline · saved ${formatTimeLocal(lastCacheStamp)} ${feedTzLabel()}`;
 }
 
 window.addEventListener("online", () => markOffline(false));

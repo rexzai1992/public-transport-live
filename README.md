@@ -24,6 +24,23 @@ npm run dev
 Open `http://localhost:3000`. Development binds to `0.0.0.0` by default so the
 site can also be tested from another device on the same network.
 
+## Agent handoff
+
+Codex and Claude Code share the same repository-native context. Start by reading
+[`AGENTS.md`](AGENTS.md) and [`docs/agent/CURRENT_STATUS.md`](docs/agent/CURRENT_STATUS.md).
+The China/Japan work is phased in
+[`docs/agent/CHINA_JAPAN_EXPANSION.md`](docs/agent/CHINA_JAPAN_EXPANSION.md).
+
+To continue the current task in Claude Code:
+
+```bash
+npm run handoff:claude
+```
+
+Claude Code loads [`CLAUDE.md`](CLAUDE.md), which imports the shared contract and
+current status. The finishing agent must update the status file so the next
+agent does not depend on chat history.
+
 For a production-style local run:
 
 ```bash
