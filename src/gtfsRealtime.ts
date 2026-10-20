@@ -1,9 +1,11 @@
+/* Speed units are per feed (src/providers/profiles.ts): Malaysian feeds publish
+   km/h, while most GTFS-Realtime feeds follow the spec's m/s. */
+import { speedToMpsForFeed } from "./providers/profiles.js";
 import GtfsRealtimeBindings from "gtfs-realtime-bindings";
 import {
   type FeedId,
   feedDefinition,
-  REALTIME_GTFS_TTL_MS,
-  REALTIME_SPEED_UNIT
+  REALTIME_GTFS_TTL_MS
 } from "./config.js";
 import { fetchArrayBuffer } from "./http.js";
 import { resolveRouteIdForTrip } from "./gtfsStatic.js";
@@ -74,7 +76,7 @@ export async function getVehiclePositions(
         tripId: tripId || undefined,
         stopId: vehicle.stopId || undefined,
         bearing: normalizeNumber(vehicle.position?.bearing),
-        speed: normalizeSpeedMps(vehicle.position?.speed),
+        speed: speedToMpsForFeed(feedId, normalizeNumber(vehicle.position?.speed)),
         timestamp: timestampSeconds > 0 ? new Date(timestampSeconds * 1000).toISOString() : undefined,
         position: {
           lat: Number(vehicle.position!.latitude),
@@ -118,13 +120,4 @@ function plausibleTimestampSeconds(vehicleSeconds: number, headerSeconds: number
   }
 
   return reference;
-}
-
-/** Canonicalises the feed's speed to metres per second. */
-function normalizeSpeedMps(value: number | null | undefined): number | undefined {
-  const raw = normalizeNumber(value);
-  if (raw === undefined) {
-    return undefined;
-  }
-  return REALTIME_SPEED_UNIT === "kmh" ? raw / 3.6 : raw;
 }

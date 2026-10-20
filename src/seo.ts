@@ -8,7 +8,8 @@ import { FEEDS, FEED_IDS, type FeedId, feedDefinition } from "./config.js";
 import { getStaticFeed, findRoutePatterns, listRoutes } from "./gtfsStatic.js";
 import { planJourney, searchStops, stopConnections, type Journey, type StopConnection } from "./journey.js";
 import { DEFAULT_JOURNEY_FEEDS } from "./routes.js";
-import { buildRouteStopSchedule, malaysiaClock, formatGtfsMinutes } from "./schedule.js";
+import { buildRouteStopSchedule, formatGtfsMinutes } from "./schedule.js";
+import { providerProfile, serviceClockForFeed } from "./providers/profiles.js";
 
 export const seoRouter = Router();
 
@@ -312,8 +313,8 @@ seoRouter.get("/routes", async (_req, res, next) => {
         .map(({ route, view, mode }) => {
           const colour = mode === "rail" && route.color ? ` style="--bc:#${esc(route.color)};--bt:#${esc(route.textColor || "fff")}"` : "";
           // Only words the row doesn't already show; the page adds the visible text.
-          const shown = new Set(`${view.code} ${view.title} ${view.ends}`.toLowerCase().split(/[^a-z0-9]+/));
-          const search = [...new Set(`${route.routeId} ${route.longName ?? ""} ${route.description ?? ""} ${def.label}`.toLowerCase().split(/[^a-z0-9]+/))]
+          const shown = new Set(`${view.code} ${view.title} ${view.ends}`.toLowerCase().split(/[^\p{L}\p{N}]+/u));
+          const search = [...new Set(`${route.routeId} ${route.longName ?? ""} ${route.description ?? ""} ${(route.altNames ?? []).join(" ")} ${def.label}`.toLowerCase().split(/[^\p{L}\p{N}]+/u))]
             .filter((word) => word && !shown.has(word))
             .join(" ");
           return `<a class="rt" href="/route/${feedId}/${encodeURIComponent(route.routeId)}" data-m="${mode}" data-s="${esc(search)}"><span class="bd"${colour}>${esc(view.code)}</span><span class="tx"><b>${esc(view.title)}</b>${view.ends ? `<small>${esc(view.ends)}</small>` : ""}</span></a>`;
@@ -572,6 +573,11 @@ const ROUTES_PAGE_SCRIPT = `
   });
   q.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
+      // Typed fast: apply the pending filter first, or Enter opens whatever
+      // the unfiltered list happened to show.
+      clearTimeout(timer);
+      render();
+      syncUrl();
       const first = (results.hidden ? browse : results).querySelector(".rt:not([hidden])");
       if (first && q.value.trim()) first.click();
     } else if (event.key === "Escape") {
@@ -823,7 +829,7 @@ seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
 
     /* Departures at each direction's first stop, from the same schedule
        expansion the app uses (today's service). */
-    const clock = malaysiaClock();
+    const clock = serviceClockForFeed(feedId);
     const schedule = buildRouteStopSchedule(feed, route.routeId, clock);
     const stopName = (name: string) => tidyName(name);
 
@@ -927,11 +933,11 @@ seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
         html: `<section class="dir" data-d="${index}" aria-label="Towards ${esc(towards)}">
 <div class="dir-main">
   <h2 class="dir-title">Towards ${esc(towards)}</h2>
-  ${times.length ? `<div class="next" data-times="${times.join(",")}">
+  ${times.length && !schedule.notRunningToday ? `<div class="next" data-times="${times.join(",")}">
     <div class="next-label">Next ${mode} from <b>${esc(stopName(origin.name))}</b></div>
     <div class="next-big" aria-live="polite">${formatGtfsMinutes(times[0])} <small>first today</small></div>
     <div class="next-more"></div>
-  </div>` : `<div class="next"><div class="next-label">No scheduled departures today.</div></div>`}
+  </div>` : `<div class="next"><div class="next-label">No scheduled departures today.${times.length ? " The timetable below is for the days this route runs." : ""}</div></div>`}
   <div class="stats">${stats}</div>
   ${bands.length ? `<h3>How often</h3><table class="freq">${bandRows}</table>` : ""}
   ${times.length ? `<details class="full"><summary>Full timetable from ${esc(stopName(origin.name))} <span>${times.length} departures</span></summary>
@@ -1014,7 +1020,7 @@ seoRouter.get("/route/:feedId/:routeId", async (req, res, next) => {
         { "@type": "ListItem", position: 2, name: label, item: `https://public.kaynx1.com/routes#${feedId}` },
         { "@type": "ListItem", position: 3, name: code }
       ]
-    }).replace(/</g, "\\u003c")}</script>${PAGE_STYLE}${ROUTE_PAGE_STYLE}${AD_HEAD}</head><body>${topBar()}<main class="wide route-page">
+    }).replace(/</g, "\\u003c")}</script>${PAGE_STYLE}${ROUTE_PAGE_STYLE}${AD_HEAD}</head><body>${topBar()}<main class="wide route-page" data-tz="${esc(providerProfile(feedId).timeZone)}">
 <p class="crumbs"><a href="/routes">All routes</a> \u203a <a href="/routes#${feedId}">${esc(label)}</a> \u203a ${esc(code)}</p>
 <div class="rtop${mapHtml ? "" : " nomap"}">
 <header class="rhead">
@@ -1153,7 +1159,7 @@ const ROUTE_PAGE_STYLE = `<style>
 
 /* Live parts of a route page: the countdown to the next departure, the part
    of the day and the hour we are in. Runs in the browser so a cached page is
-   never stale; all times are Malaysia/Singapore time (both UTC+8). */
+   never stale; times are the route's own local time, from <main data-tz>. */
 const ROUTE_PAGE_SCRIPT = `
 (() => {
   const tabs = [...document.querySelectorAll(".dtabs button")];
@@ -1173,7 +1179,8 @@ const ROUTE_PAGE_SCRIPT = `
   const fmt = (m) => String(Math.floor(m / 60) % 24).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
 
   function nowMinutes() {
-    const p = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
+    const zone = document.querySelector(".route-page")?.dataset.tz || "Asia/Kuala_Lumpur";
+    const p = new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
     return Number(p.find((x) => x.type === "hour").value) * 60 + Number(p.find((x) => x.type === "minute").value);
   }
 

@@ -477,6 +477,14 @@ const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
     return;
   }
 
+  /* Express and body-parser mark client faults (bad %-encoding, malformed or
+     oversized JSON) with a 4xx status; those are the caller's, not ours. */
+  const status = Number((error as { status?: unknown; statusCode?: unknown })?.status ?? (error as { statusCode?: unknown })?.statusCode);
+  if (status >= 400 && status < 500) {
+    res.status(status).json({ error: status === 413 ? "Request too large" : "Bad request" });
+    return;
+  }
+
   /* Unexpected errors: log the detail, hand the client a generic line —
      internal messages (paths, upstream hostnames) are not for the public. */
   console.error("Unhandled error:", error);
